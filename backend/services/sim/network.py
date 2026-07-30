@@ -12,9 +12,9 @@ FEEDER_IDS = ["F1", "F2", "F3"]
 DTS_PER_FEEDER = 20
 SUB_VN_KV = 11.0
 LV_VN_KV = 0.415
-MV_LINE_STD_TYPE = "NA2XS2Y 1x150 RM/25 6/10 kV"
-DT_RATING_CHOICES_KVA = [63.0, 100.0, 160.0, 200.0, 250.0]
-DT_RATING_WEIGHTS = [0.10, 0.40, 0.30, 0.15, 0.05]
+MV_LINE_STD_TYPE = "NA2XS2Y 1x70 RM/25 6/10 kV"
+STANDARD_DT_RATINGS_KVA = [63.0, 100.0, 160.0, 200.0, 250.0, 315.0, 400.0, 500.0]
+PROVISIONAL_DT_RATING_KVA = 160.0
 POWER_FACTOR = 0.95
 
 
@@ -104,7 +104,7 @@ def build_network(rng: np.random.Generator) -> NetworkContext:
             dt_section_line[dt_id] = line_idx
             dt_section_switch[dt_id] = switch_idx
 
-            rating_kva = float(rng.choice(DT_RATING_CHOICES_KVA, p=DT_RATING_WEIGHTS))
+            rating_kva = PROVISIONAL_DT_RATING_KVA
             trafo_idx = pp.create_transformer_from_parameters(
                 net, hv_bus=mv_bus, lv_bus=lv_bus,
                 sn_mva=rating_kva / 1000.0, vn_hv_kv=SUB_VN_KV, vn_lv_kv=LV_VN_KV,
@@ -143,6 +143,22 @@ def build_network(rng: np.random.Generator) -> NetworkContext:
         dt_parent=dt_parent, dts=dts, tie_switches=tie_switches,
         tie_switch_pp_idx=tie_switch_pp_idx, tie_switch_bus=tie_switch_bus,
     )
+
+
+def resize_transformers(
+    ctx: NetworkContext, design_peak_kw: dict[str, float], rng: np.random.Generator
+) -> None:
+    ratings = np.array(STANDARD_DT_RATINGS_KVA)
+    for dt_id, peak_kw in design_peak_kw.items():
+        design_utilisation = float(np.clip(rng.normal(0.78, 0.10), 0.55, 0.95))
+        required_kva = peak_kw / POWER_FACTOR / design_utilisation
+        eligible = ratings[ratings >= required_kva]
+        rating_kva = float(eligible[0]) if eligible.size else float(ratings[-1])
+
+        ctx.dts[dt_id].rating_kva = rating_kva
+        trafo_idx = ctx.dt_trafo_idx[dt_id]
+        ctx.net.trafo.at[trafo_idx, "sn_mva"] = rating_kva / 1000.0
+        ctx.net.trafo.at[trafo_idx, "pfe_kw"] = _trafo_pfe_kw(rating_kva)
 
 
 def set_dt_load_kw(ctx: NetworkContext, dt_id: str, p_kw: float) -> None:

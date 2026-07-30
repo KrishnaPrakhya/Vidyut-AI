@@ -26,6 +26,8 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
+markers = ["slow: full-length property sweeps"]
 
 [tool.uv]
 package = false
