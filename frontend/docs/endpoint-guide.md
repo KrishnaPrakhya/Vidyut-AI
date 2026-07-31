@@ -333,6 +333,25 @@ Frontend use:
 - Database failures should not be presented as simulation failures.
 - Estimated weather-sensitive opportunity must not be presented as registered capacity or appliance detection.
 
+## Frontend agentic-copilot endpoint
+
+### `POST http://localhost:3000/api/ai/explain`
+
+Asks: “Explain this recorded grid interval using only its supplied evidence.”
+
+This is a Next.js server endpoint rather than a FastAPI simulation endpoint. It uses LangGraph to ground the frame, plan the request, route it to a specialist, verify numeric claims and optionally repair the draft. Supported intents are risk, baseline comparison, resident communication, incident summary and general analysis.
+
+Frontend use:
+
+- Send only curated frame fields; never send the entire run, secrets or untrusted external documents.
+- Render `evidence` beside the answer and expose `trace` as the agent audit path.
+- Treat `confidence` as grounding confidence, not forecast-model accuracy.
+- Keep the `advisory_only` and simulated-data labels visible.
+- Do not add actuation tools to this graph. Deterministic backend controllers remain the only source of simulated control events.
+- `GROQ_API_KEY` belongs in the frontend server environment and must never use a `NEXT_PUBLIC_` prefix.
+
+The endpoint returns 422 for incomplete context, 503 when the server key is absent and 502 when the model workflow is unavailable.
+
 ## Where to find exact formats
 
 - `frontend/docs/frontend-context.json`: every parameter, type, limit and response contract.

@@ -13,17 +13,30 @@ const prompts = [
   "Why is this transformer at risk?",
   "Explain the action to a resident.",
   "What changed versus baseline?",
+  "Draft an incident summary.",
 ];
+
+type CopilotResponse = {
+  explanation: string;
+  intent: "risk" | "compare" | "resident" | "incident" | "general";
+  audience: "operator" | "resident" | "reviewer";
+  confidence: "high" | "medium";
+  evidence: Array<{ id: string; label: string; value: string; source: string }>;
+  trace: Array<{ node: string; label: string; detail: string; status: "complete" | "corrected" }>;
+  orchestrator: "langgraph";
+  duration_ms: number;
+};
 
 export function AiExplainer({ frame, scenario, transformer }: AiExplainerProps) {
   const [question, setQuestion] = useState(prompts[0]);
-  const [answer, setAnswer] = useState<string | null>(null);
+  const [result, setResult] = useState<CopilotResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function ask(nextQuestion = question) {
     setBusy(true);
     setError(null);
+    setResult(null);
     setQuestion(nextQuestion);
     try {
       const baselineTransformer = frame.arms.baseline.dts.find((item) => item.id === transformer.id);
@@ -59,7 +72,7 @@ export function AiExplainer({ frame, scenario, transformer }: AiExplainerProps) 
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail ?? "Explanation failed");
-      setAnswer(payload.explanation);
+      setResult(payload as CopilotResponse);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Explanation failed");
     } finally {
@@ -68,12 +81,20 @@ export function AiExplainer({ frame, scenario, transformer }: AiExplainerProps) 
   }
 
   return <section className="ai-explainer">
-    <div className="ai-head"><span><i>✦</i> Vidyut AI</span><b>ADVISORY ONLY</b></div>
-    <h3>Explain this moment</h3>
-    <p>Ask for a plain-language reading of the current simulated interval.</p>
+    <div className="ai-head"><span><i>✦</i> Vidyut Copilot</span><b>LANGGRAPH · ADVISORY</b></div>
+    <h3>Investigate this moment</h3>
+    <p>The copilot plans an evidence-bounded analysis, then verifies every numeric claim.</p>
     <div className="ai-prompts">{prompts.map((prompt) => <button type="button" key={prompt} className={question === prompt ? "active" : ""} onClick={() => ask(prompt)} disabled={busy}>{prompt}</button>)}</div>
-    <form onSubmit={(event) => { event.preventDefault(); void ask(); }}><input value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={300} aria-label="Question for Vidyut AI" /><button type="submit" disabled={busy || !question.trim()}>{busy ? "…" : "↑"}</button></form>
-    {answer && <div className="ai-answer"><span>At {frame.clock} · {transformer.id}</span><p>{answer}</p></div>}
+    <form onSubmit={(event) => { event.preventDefault(); void ask(); }}><input value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={300} aria-label="Question for Vidyut Copilot" /><button type="submit" disabled={busy || !question.trim()}>{busy ? "…" : "↑"}</button></form>
+    {busy && <div className="agent-working" role="status"><i /><span>Grounding → planning → verifying</span></div>}
+    {result && <div className="ai-result" aria-live="polite">
+      <div className="ai-answer"><span>{frame.clock} · {transformer.id} · {result.intent} · {result.confidence} confidence</span><p>{result.explanation}</p></div>
+      <div className="agent-evidence" aria-label="Evidence used">{result.evidence.map((item) => <div key={item.id}><span>{item.label}</span><strong>{item.value}</strong><small>{item.source}</small></div>)}</div>
+      <details className="agent-trace">
+        <summary><span>Agent audit path</span><b>{result.trace.length} nodes · {result.duration_ms} ms</b></summary>
+        <ol>{result.trace.map((step, index) => <li key={`${step.node}-${index}`} className={step.status}><i>{index + 1}</i><div><strong>{step.label}</strong><span>{step.detail}</span></div></li>)}</ol>
+      </details>
+    </div>}
     {error && <p className="ai-error">{error}</p>}
   </section>;
 }

@@ -21,6 +21,7 @@ export default function Home() {
   const [replayMode, setReplayMode] = useState<ReplayMode>("explore");
   const [scenario, setScenario] = useState<ScenarioName>("heatwave");
   const [recording, setRecording] = useState<Recording | null>(null);
+  const [generatedRun, setGeneratedRun] = useState<{ recording: Recording; runId: string } | null>(null);
   const [online, setOnline] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +66,7 @@ export default function Home() {
   function changeScenario(value: ScenarioName) {
     setLoading(true);
     setError(null);
+    setGeneratedRun(null);
     setScenario(value);
     setReplayMode(value === "heatwave" ? "story" : "explore");
   }
@@ -76,10 +78,21 @@ export default function Home() {
   }
 
   function watchStory() {
+    setGeneratedRun(null);
     setScenario("heatwave");
     setReplayMode("story");
     enterConsole("replay");
   }
+
+  function openGeneratedRun(nextRecording: Recording, runId: string) {
+    setGeneratedRun({ recording: nextRecording, runId });
+    setScenario(nextRecording.meta.scenario);
+    setReplayMode("explore");
+    setView("overview");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  const activeRecording = generatedRun?.recording ?? recording;
 
   return <AnimatePresence mode="wait">
     {surface === "landing" ? <LandingPage key="landing" recording={recording} online={online} onEnter={() => enterConsole("overview")} onWatch={watchStory} /> :
@@ -97,10 +110,10 @@ export default function Home() {
             >
               {loading && <main className="loading-screen"><div className="loading-grid" aria-hidden="true">{Array.from({ length: 60 }, (_, index) => <i key={index} />)}</div><div><span>Loading recorded network</span><strong>{scenario.replaceAll("_", " ")}</strong><p>96 intervals · 60 transformers · two control strategies</p></div></main>}
               {!loading && error && <main className="error-screen"><span>Replay unavailable</span><h1>The recorded scenario could not be loaded.</h1><p>{error}</p><p>Confirm the backend is running at <code>{API_URL}</code>.</p><button className="primary-action" onClick={() => window.location.reload()}>Try again</button></main>}
-              {!loading && recording && view === "overview" && <CommandCenter key={`${scenario}-overview`} recording={recording} scenario={scenario} online={online} onOpenReplay={() => { setReplayMode("explore"); setView("replay"); }} onOpenSimulation={() => setView("simulate")} />}
-              {!loading && recording && view === "replay" && replayMode === "story" && <StoryMode recording={recording} onExplore={() => setReplayMode("explore")} />}
-              {!loading && recording && view === "replay" && replayMode === "explore" && <ReplayDashboard recording={recording} onStory={scenario === "heatwave" ? () => setReplayMode("story") : undefined} />}
-              {view === "simulate" && <SimulationLab online={online} />}
+              {!loading && activeRecording && view === "overview" && <CommandCenter key={`${scenario}-${generatedRun?.runId ?? "demo"}-overview`} recording={activeRecording} scenario={scenario} online={online} source={generatedRun ? { kind: "generated", runId: generatedRun.runId } : { kind: "demo" }} onOpenReplay={() => { setReplayMode("explore"); setView("replay"); }} onOpenSimulation={() => setView("simulate")} />}
+              {!loading && activeRecording && view === "replay" && replayMode === "story" && <StoryMode recording={activeRecording} onExplore={() => setReplayMode("explore")} />}
+              {!loading && activeRecording && view === "replay" && replayMode === "explore" && <ReplayDashboard recording={activeRecording} onStory={scenario === "heatwave" ? () => setReplayMode("story") : undefined} />}
+              {view === "simulate" && <SimulationLab online={online} onOpenCommandCenter={openGeneratedRun} />}
               {view === "assurance" && <AssuranceLab online={online} />}
             </motion.div>
           </AnimatePresence>

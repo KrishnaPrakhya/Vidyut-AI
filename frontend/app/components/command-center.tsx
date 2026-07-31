@@ -16,15 +16,17 @@ type CommandCenterProps = {
   recording: Recording;
   scenario: ScenarioName;
   online: boolean;
+  source: { kind: "demo" } | { kind: "generated"; runId: string };
   onOpenReplay: () => void;
   onOpenSimulation: () => void;
 };
 
 function findRiskTick(recording: Recording) {
-  return recording.ticks.find((frame) => frame.arms.baseline.metrics.max_trafo_loading_pct >= 100)?.t ?? 65;
+  const riskIndex = recording.ticks.findIndex((frame) => frame.arms.baseline.metrics.max_trafo_loading_pct >= 100);
+  return riskIndex >= 0 ? riskIndex : Math.max(0, Math.min(65, recording.ticks.length - 1));
 }
 
-export function CommandCenter({ recording, scenario, online, onOpenReplay, onOpenSimulation }: CommandCenterProps) {
+export function CommandCenter({ recording, scenario, online, source, onOpenReplay, onOpenSimulation }: CommandCenterProps) {
   const [tick, setTick] = useState(() => findRiskTick(recording));
   const [playing, setPlaying] = useState(false);
   const [arm, setArm] = useState<"vidyut" | "baseline">("vidyut");
@@ -62,8 +64,24 @@ export function CommandCenter({ recording, scenario, online, onOpenReplay, onOpe
 
   return <main className="command-center">
     <section className="command-titlebar">
-      <div><span className="command-code">LIVE RECORDED OPERATING PICTURE</span><h1>Distribution command</h1><p>One synchronized view of demand, network state, interventions and their human impact.</p></div>
+      <div><span className="command-code">{source.kind === "generated" ? "YOUR GENERATED SIMULATION" : "AUTO-LOADED DEMO RECORDING"}</span><h1>Distribution command</h1><p>One synchronized view of demand, network state, interventions and their human impact.</p></div>
       <div className="command-title-actions"><span className={`operating-pill ${online ? "online" : ""}`}><i />{online ? "Simulation core connected" : "Recorded replay"}</span><button type="button" onClick={onOpenSimulation}>Run new scenario <b>↗</b></button></div>
+    </section>
+
+    <section className={`recording-provenance ${source.kind}`} aria-label="Simulation data source">
+      <div className="provenance-mark">{source.kind === "generated" ? "✓" : "D"}</div>
+      <div className="provenance-copy">
+        <span>{source.kind === "generated" ? "Generated in this session" : "Why data is already visible"}</span>
+        <strong>{source.kind === "generated" ? "You are viewing the run you just created." : "This is a pre-recorded demonstration—not live grid data."}</strong>
+        <p>{source.kind === "generated" ? "The command center and 3D twin now use the exact frames produced by your Simulation Lab run." : "Vidyut loads one deterministic scenario so the command center is useful on first visit. Run a scenario to replace it with your own result."}</p>
+      </div>
+      <div className="provenance-meta">
+        <span>Scenario<strong>{scenario.replaceAll("_", " ")}</strong></span>
+        <span>Seed<strong>{recording.meta.seed}</strong></span>
+        <span>Intervals<strong>{recording.ticks.length}</strong></span>
+        {source.kind === "generated" && <span>Run ID<strong>{source.runId.slice(0, 8)}</strong></span>}
+      </div>
+      <button type="button" onClick={source.kind === "generated" ? onOpenReplay : onOpenSimulation}>{source.kind === "generated" ? "Explore this replay →" : "Create my own run →"}</button>
     </section>
 
     <section className="command-kpis">
@@ -81,10 +99,10 @@ export function CommandCenter({ recording, scenario, online, onOpenReplay, onOpe
             <AreaChart data={chart} margin={{ top: 12, right: 6, left: -25, bottom: 0 }}>
               <defs><linearGradient id="vidyutArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#c9f04d" stopOpacity={.32} /><stop offset="100%" stopColor="#c9f04d" stopOpacity={0} /></linearGradient><linearGradient id="baselineArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ff754c" stopOpacity={.18} /><stop offset="100%" stopColor="#ff754c" stopOpacity={0} /></linearGradient></defs>
               <CartesianGrid vertical={false} stroke="rgba(224,239,230,.08)" />
-              <XAxis dataKey="clock" interval={23} tick={{ fill: "#718078", fontSize: 8 }} axisLine={false} tickLine={false} />
-              <YAxis domain={[0, 135]} tick={{ fill: "#718078", fontSize: 8 }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="clock" interval={23} tick={{ fill: "#718078", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 135]} tick={{ fill: "#718078", fontSize: 10 }} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={{ background: "#0d1b16", border: "1px solid rgba(224,239,230,.18)", fontSize: 10 }} labelStyle={{ color: "#c9f04d" }} />
-              <ReferenceLine y={100} stroke="#ff754c" strokeDasharray="4 4" label={{ value: "equipment limit", fill: "#ff8d6b", fontSize: 8 }} />
+              <ReferenceLine y={100} stroke="#ff754c" strokeDasharray="4 4" label={{ value: "equipment limit", fill: "#ff8d6b", fontSize: 10 }} />
               <ReferenceLine x={frame.clock} stroke="#edf6ef" strokeOpacity={.55} />
               <Area type="monotone" dataKey="baseline" stroke="#ff754c" fill="url(#baselineArea)" strokeWidth={1.4} dot={false} />
               <Area type="monotone" dataKey="vidyut" stroke="#c9f04d" fill="url(#vidyutArea)" strokeWidth={2} dot={false} />

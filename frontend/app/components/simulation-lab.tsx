@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
-import type { RunFlexibility, RunSummary, ScenarioName, TickFrame } from "../types";
+import type { Recording, RunFlexibility, RunSummary, ScenarioName, TickFrame } from "../types";
 import { API_URL, api, formatNumber, titleCase } from "../lib/replay";
 import { TransformerGrid } from "./transformer-grid";
 
@@ -13,6 +13,7 @@ const Network3D = dynamic(
 
 type SimulationLabProps = {
   online: boolean;
+  onOpenCommandCenter: (recording: Recording, runId: string) => void;
 };
 
 type EventResponse = {
@@ -33,7 +34,7 @@ const defaultParams = {
   peak_multiplier: 1.35,
 };
 
-export function SimulationLab({ online }: SimulationLabProps) {
+export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProps) {
   const [scenario, setScenario] = useState<ScenarioName>("heatwave");
   const [seed, setSeed] = useState(42);
   const [ticks, setTicks] = useState(96);
@@ -49,6 +50,7 @@ export function SimulationLab({ online }: SimulationLabProps) {
   const [notifications, setNotifications] = useState<NotificationResponse | null>(null);
   const [dispatchResult, setDispatchResult] = useState<string | null>(null);
   const [frames, setFrames] = useState<TickFrame[]>([]);
+  const [completedRecording, setCompletedRecording] = useState<Recording | null>(null);
   const [cursor, setCursor] = useState(0);
   const [networkView, setNetworkView] = useState<"grid" | "spatial">("grid");
   const [spatialArm, setSpatialArm] = useState<"baseline" | "vidyut">("vidyut");
@@ -72,24 +74,35 @@ export function SimulationLab({ online }: SimulationLabProps) {
   }
 
   function collectFrames(id: string) {
-    return new Promise<void>((resolve) => {
+    return new Promise<TickFrame[]>((resolve, reject) => {
       const socket = new WebSocket(
-        `${API_URL.replace(/^http/, "ws")}/ws/runs/${id}?speed=400`,
+        `${API_URL.replace(/^http/, "ws")}/ws/runs/${id}?speed=200`,
       );
       const collected: TickFrame[] = [];
+      let settled = false;
       const finish = () => {
+        if (settled) return;
+        settled = true;
         socket.close();
         setFrames(collected);
         setCursor(collected.length ? collected.length - 1 : 0);
-        resolve();
+        if (collected.length) setNetworkView("spatial");
+        resolve(collected);
+      };
+      const fail = (message: string) => {
+        if (settled) return;
+        settled = true;
+        socket.close();
+        reject(new Error(message));
       };
       socket.onmessage = (message) => {
         const payload = JSON.parse(message.data);
         if (payload.type === "tick") collected.push(payload as TickFrame);
-        else if (payload.type === "complete" || payload.type === "error") finish();
+        else if (payload.type === "complete") finish();
+        else if (payload.type === "error") fail(payload.detail ?? "The network replay could not be streamed");
       };
-      socket.onerror = finish;
-      window.setTimeout(finish, 30000);
+      socket.onerror = () => fail("The network replay connection failed");
+      window.setTimeout(() => fail("The network replay did not arrive within 30 seconds"), 30000);
     });
   }
 
@@ -102,6 +115,7 @@ export function SimulationLab({ online }: SimulationLabProps) {
     setNotifications(null);
     setDispatchResult(null);
     setFrames([]);
+    setCompletedRecording(null);
     setCursor(0);
     setPhase("Creating run");
     try {
@@ -129,7 +143,21 @@ export function SimulationLab({ online }: SimulationLabProps) {
       setEvents(nextEvents);
       setNotifications(nextNotifications);
       setPhase("Streaming the network");
-      await collectFrames(created.run_id);
+      const nextFrames = await collectFrames(created.run_id);
+      const nextRecording: Recording = {
+        meta: {
+          schema_version: 1,
+          scenario,
+          seed,
+          ticks: nextFrames.length,
+          arms: ["baseline", "vidyut"],
+          simulated: true,
+        },
+        ticks: nextFrames,
+        summary: { arms: nextSummary.arms, deltas: nextSummary.deltas },
+        notifications: [],
+      };
+      setCompletedRecording(nextRecording);
       setPhase("Complete");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not run the simulation");
@@ -214,7 +242,11 @@ export function SimulationLab({ online }: SimulationLabProps) {
             })}
           </div>
           <div className="result-actions">
-            <a className="secondary-action" href={`${API_URL}/api/runs/${runId}/report`} target="_blank" rel="noreferrer">Open audit report ↗</a>
+            <div>
+              <button className="primary-action" type="button" disabled={!completedRecording || !runId} onClick={() => completedRecording && runId && onOpenCommandCenter(completedRecording, runId)}>Open in command center →</button>
+              <button className="secondary-action button" type="button" disabled={!frames.length} onClick={() => { setNetworkView("spatial"); window.requestAnimationFrame(() => document.getElementById("simulation-network")?.scrollIntoView({ behavior: "smooth", block: "start" })); }}>View 3D network ↓</button>
+              <a className="secondary-action" href={`${API_URL}/api/runs/${runId}/report`} target="_blank" rel="noreferrer">Open audit report ↗</a>
+            </div>
             <span>{events?.total ?? 0} controller events · {notifications?.count ?? 0} notifications pending</span>
           </div>
         </section>
@@ -223,9 +255,9 @@ export function SimulationLab({ online }: SimulationLabProps) {
           const frame = frames[Math.min(cursor, frames.length - 1)];
           const targets = new Set(frame.arms.vidyut.events.map((event) => event.target));
           return (
-            <section className="results-section">
+            <section className="results-section" id="simulation-network">
               <div className="section-heading">
-                <div><p className="eyebrow">The network, hour by hour</p><h2>{frame.clock}</h2></div>
+                <div><p className="eyebrow">Your run · the network hour by hour</p><h2>{frame.clock}</h2><p className="section-note">Drag the timeline to move through the day. Click any transformer to inspect it.</p></div>
                 <div className="view-toggle" role="group" aria-label="Network view">
                   <button type="button" className={networkView === "grid" ? "active" : ""} onClick={() => setNetworkView("grid")} aria-pressed={networkView === "grid"}>Grid</button>
                   <button type="button" className={networkView === "spatial" ? "active" : ""} onClick={() => setNetworkView("spatial")} aria-pressed={networkView === "spatial"}>3D</button>

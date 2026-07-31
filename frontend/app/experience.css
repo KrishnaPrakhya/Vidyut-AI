@@ -158,9 +158,21 @@ body { min-width: 320px; }
 .console-content .network-compare.spatial-single { grid-template-columns: 1fr; }.console-content .spatial-single .network-arm { border-left: 0; }.console-content .spatial-single .twin-stage { height: clamp(470px, 62vh, 720px); }.network-view-bar .arm-switch { margin-left: auto; }
 
 .console-content .workspace { min-height: calc(100vh - var(--topbar)); padding: 38px clamp(18px, 3vw, 46px) 70px; color: #eaf2ec; background: var(--night); }.console-content .workspace-hero { align-items: start; }.console-content .workspace-hero h1, .console-content .assurance-hero h1 { font-size: clamp(42px, 5vw, 72px); }.console-content .lede { color: #84958c; }.console-content .panel { color: #eaf2ec; background: var(--panel); border-color: var(--hairline); }.console-content .run-builder { box-shadow: 8px 8px 0 rgba(201, 240, 77, .12); }.console-content .form-grid input, .console-content .form-grid select, .console-content .advanced-grid input, .console-content .method-form input, .console-content .method-form select { color: #e4eee8; background: #08130f; border-color: #2a3f35; }.console-content .run-progress { background: #213229; }.console-content .preflight-grid, .console-content .preflight-grid article + article, .console-content .comparison-row, .console-content .comparison-head, .console-content .asset-bars i, .console-content .mini-stats, .console-content .event-list > div { border-color: var(--hairline); }.console-content .preflight-grid p, .console-content .result-actions span, .console-content .capacity-stat span, .console-content .asset-bars em, .console-content .panel-note { color: #7d8e85; }.console-content .comparison-row { background: rgba(255, 255, 255, .015); }.console-content .comparison-table { border-top-color: var(--lime); }.console-content .secondary-action { color: #eaf2ec; border-color: #41544a; }.console-content .message-preview { background: #111f19; }.console-content .simulation-workspace .network-compare { background: var(--panel); }.console-content .results-grid { grid-template-columns: 1.1fr 1fr .8fr; }
+
+/* Console provenance and readable operational type scale */
+.recording-provenance { display: grid; grid-template-columns: auto minmax(280px, 1fr) auto auto; align-items: center; gap: 16px; margin-top: 18px; padding: 15px 16px; background: #0d1b16; border: 1px solid var(--hairline); border-left: 3px solid var(--yellow); }.recording-provenance.generated { border-left-color: var(--lime); background: linear-gradient(90deg, rgba(201, 240, 77, .07), transparent 38%), #0d1b16; }.provenance-mark { width: 34px; height: 34px; display: grid; place-items: center; color: var(--night); background: var(--yellow); font: 800 13px var(--mono); }.recording-provenance.generated .provenance-mark { background: var(--lime); }.provenance-copy { display: grid; }.provenance-copy > span { color: var(--yellow); font: 9px var(--mono); letter-spacing: .09em; text-transform: uppercase; }.generated .provenance-copy > span { color: var(--lime); }.provenance-copy strong { margin-top: 4px; font-size: 14px; }.provenance-copy p { max-width: 680px; margin: 4px 0 0; color: #87998f; font-size: 11px; line-height: 1.5; }.provenance-meta { display: flex; gap: 15px; padding-inline: 15px; border-inline: 1px solid var(--hairline); }.provenance-meta span { display: grid; gap: 4px; color: #687a70; font: 8px var(--mono); text-transform: uppercase; }.provenance-meta strong { color: #dce8e0; font-size: 10px; font-weight: 500; text-transform: capitalize; }.recording-provenance > button { min-height: 38px; padding: 0 13px; color: var(--lime); background: transparent; border: 1px solid #49632e; font-size: 10px; font-weight: 800; white-space: nowrap; }
+
+.console-brand strong { font-size: 13px; }.console-brand small { font-size: 9px; }.nav-label { font-size: 9px; }.console-sidebar nav button { font-size: 12px; }.sidebar-health strong { font-size: 10px; }.sidebar-health small, .sidebar-foot > button { font-size: 9px; }.console-breadcrumb { font-size: 9px; }.console-search input { font-size: 11px; }.console-scenario { font-size: 9px; }.console-scenario select { font-size: 11px; }.operator-badge > span { font-size: 9px; }.operator-badge strong { font-size: 10px; }.operator-badge small { font-size: 8px; }
+.command-code { font-size: 9px; }.command-titlebar p { font-size: 13px; line-height: 1.5; }.operating-pill { font-size: 9px; }.command-title-actions button { font-size: 10px; }.command-kpis span { font-size: 9px; }.command-kpis small { font-size: 9px; line-height: 1.35; }.command-panel-head span { font-size: 9px; }.command-panel-head h2 { font-size: 15px; }.demand-summary span { font-size: 9px; }.demand-summary strong { font-size: 13px; }.arm-switch button { font-size: 9px; }.asset-strip span { font-size: 8px; }.asset-strip strong { font-size: 11px; }.decision-feed .command-panel-head > b { font-size: 8px; }.decision-list span { font-size: 8px; }.decision-list strong { font-size: 11px; }.decision-list p { font-size: 9px; }.monitoring-state strong { font-size: 12px; }.monitoring-state p, .feed-link { font-size: 9px; }.ai-head > span { font-size: 10px; }.ai-head b { font-size: 8px; }.ai-explainer h3 { font-size: 15px; }.ai-explainer > p { font-size: 10px; }.ai-prompts button { font-size: 9px; }.ai-explainer form input { font-size: 10px; }.ai-answer span { font-size: 8px; }.ai-answer p { font-size: 10px; }.agent-working { font-size: 9px; }.agent-evidence span { font-size: 8px; }.agent-evidence strong { font-size: 10px; }.agent-evidence small { font-size: 8px; }.agent-trace summary, .agent-trace li strong { font-size: 8px; }.agent-trace li span { font-size: 8px; }.timeline-clock span, .timeline-legend { font-size: 8px; }
+.console-content .eyebrow { font-size: 10px; }.console-content .lede { font-size: 15px; line-height: 1.65; }.console-content .panel-heading > span, .console-content .status-dot { font-size: 10px; }.console-content .form-grid label, .console-content .advanced-grid label, .console-content .method-form label { font-size: 10px; }.console-content .form-grid input, .console-content .form-grid select, .console-content .advanced-grid input, .console-content .method-form input, .console-content .method-form select { font-size: 14px; }.console-content .text-button { font-size: 12px; }.console-content .run-progress span { font-size: 10px; }.console-content .preflight-grid strong { font-size: 19px; }.console-content .preflight-grid p { font-size: 14px; }.console-content .section-note { color: #84958c; font-size: 13px; line-height: 1.55; }.console-content .run-identity span { font-size: 9px; }.console-content .run-identity code { font-size: 11px; }.console-content .comparison-head { font-size: 10px; }.console-content .comparison-row { font-size: 18px; }.console-content .comparison-row strong { font-size: 14px; }.console-content .comparison-row small { font-size: 10px; }.console-content .result-actions { gap: 18px; }.console-content .result-actions > div { display: flex; flex-wrap: wrap; gap: 9px; }.console-content .result-actions .secondary-action.button { width: auto; }.console-content .result-actions span { font-size: 10px; }.console-content .source-chip { font-size: 9px; }.console-content .capacity-stat span { font-size: 12px; }.console-content .asset-bars > div { font-size: 11px; }.console-content .asset-bars em { font-size: 10px; }.console-content .mini-stats span { font-size: 10px; }.console-content .event-list strong { font-size: 11px; }.console-content .event-list small, .console-content .event-list em { font-size: 9px; }.console-content .panel-note, .console-content .success-note { font-size: 10px; }.console-content .message-preview span { font-size: 9px; }.console-content .message-preview p, .console-content .compact-empty { font-size: 11px; }
+
+@media (max-width: 1250px) { .recording-provenance { grid-template-columns: auto 1fr auto; }.provenance-meta { grid-column: 2 / -1; grid-row: 2; padding: 11px 0 0; border: 0; border-top: 1px solid var(--hairline); }.recording-provenance > button { grid-column: 3; grid-row: 1; } }
+@media (max-width: 760px) { .recording-provenance { grid-template-columns: auto 1fr; align-items: start; }.provenance-meta, .recording-provenance > button { grid-column: 1 / -1; grid-row: auto; }.provenance-meta { flex-wrap: wrap; }.recording-provenance > button { width: 100%; }.command-title-actions { flex-wrap: wrap; }.console-content .result-actions > div { width: 100%; }.console-content .result-actions > div > * { width: 100%; } }
 .console-content .assurance-workspace { background: var(--night); }.console-content .evidence-ladder article { color: #e8f0eb; background: var(--panel); border-color: var(--hairline); }.console-content .evidence-ladder article:nth-of-type(2) { border-top-color: var(--yellow); }.console-content .evidence-ladder article:nth-of-type(3) { border-top-color: var(--mint); }.console-content .method-card { background: var(--panel); }.console-content .method-form { background: #12221b; }.console-content .input-provenance, .console-content .method-heading > p, .console-content .evidence-ladder p { color: #7e9086; }.console-content .method-empty { border-color: var(--hairline); }.console-content .method-empty span { color: #91a299; background: #14281f; }.console-content .method-empty strong { color: var(--lime); }.console-content .result-ring::after { background: var(--panel); }.console-content .method-stats, .console-content .profile-chart { border-color: var(--hairline); }.console-content .guardrail-strip { border: 1px solid #2b4b3c; }
 
 @keyframes twin-spin { to { transform: rotate(360deg); } }
+
+.agent-working { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 9px; color: #93a39a; background: rgba(7, 17, 14, .65); border: 1px solid var(--hairline); font: 6.5px var(--mono); letter-spacing: .04em; }.agent-working i { width: 7px; height: 7px; border: 1px solid var(--lime); border-top-color: transparent; border-radius: 50%; animation: agent-spin .8s linear infinite; }.ai-result { display: grid; gap: 8px; }.agent-evidence { display: grid; grid-template-columns: 1fr; gap: 4px; }.agent-evidence div { min-width: 0; display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 7px; background: rgba(7, 17, 14, .65); border: 1px solid var(--hairline); }.agent-evidence span { color: #71837a; font: 5.5px var(--mono); text-transform: uppercase; }.agent-evidence strong { color: #dfe9e2; font: 500 8px var(--mono); text-align: right; }.agent-evidence small { grid-column: 1 / -1; margin-top: 2px; overflow: hidden; color: #53675d; font: 5px var(--mono); text-overflow: ellipsis; white-space: nowrap; }.agent-trace { background: #08130f; border: 1px solid var(--hairline); }.agent-trace summary { display: flex; justify-content: space-between; gap: 8px; padding: 8px; color: #8fa097; cursor: pointer; font: 6px var(--mono); list-style: none; }.agent-trace summary::-webkit-details-marker { display: none; }.agent-trace summary b { color: var(--lime); font-weight: 500; }.agent-trace ol { display: grid; gap: 0; margin: 0; padding: 0 8px 8px; list-style: none; }.agent-trace li { display: grid; grid-template-columns: 17px 1fr; gap: 6px; padding: 6px 0; border-top: 1px solid rgba(226, 240, 231, .07); }.agent-trace li > i { width: 15px; height: 15px; display: grid; place-items: center; color: var(--night); background: var(--mint); border-radius: 50%; font: normal 5px var(--mono); }.agent-trace li.corrected > i { background: var(--yellow); }.agent-trace li div { min-width: 0; display: grid; }.agent-trace li strong { color: #bdc9c1; font: 6px var(--mono); }.agent-trace li span { margin-top: 2px; color: #5f7268; font: 5.5px/1.4 var(--mono); }.ai-prompts button:disabled, .ai-explainer form button:disabled { cursor: wait; opacity: .55; }@keyframes agent-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 1160px) {
   :root { --sidebar: 190px; }
@@ -181,4 +193,142 @@ body { min-width: 320px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+@media (max-width: 720px) {
+  .mobile-console-nav button { font-size: 9px; }
+  .mobile-console-nav button i { font-size: 15px; }
+  .command-code, .command-kpis span, .command-kpis small, .command-panel-head span, .demand-summary span, .asset-strip span, .decision-list span, .timeline-clock span { font-size: 10px; }
+  .provenance-copy > span { font-size: 10px; }
+  .provenance-copy p { font-size: 12px; }
+  .provenance-meta span { font-size: 9px; }
+  .provenance-meta strong { font-size: 11px; }
+}
+
+/* Unified readable typography scale. Dense visual annotations stop at 10px;
+   captions at 11px; navigation and controls at 12–13px; body copy at 14px+. */
+:root {
+  --type-visual: 10px;
+  --type-caption: 11px;
+  --type-label: 12px;
+  --type-control: 13px;
+  --type-body: 14px;
+}
+
+/* Landing navigation and hero */
+.landing-nav { min-height: 82px; }
+.landing-brand strong { font-size: 15px; }
+.landing-brand small { font-size: var(--type-caption); }
+.landing-nav nav a { font-size: var(--type-control); font-weight: 600; }
+.nav-launch { font-size: var(--type-control); }
+.system-line { font-size: var(--type-label); }
+.hero-actions button { font-size: var(--type-control); }
+.hero-proof { font-size: var(--type-caption); }
+.hero-twin-head { font-size: var(--type-label); }
+.hero-twin-stat span, .hero-twin-stat small { font-size: var(--type-visual); }
+
+/* Landing sections */
+.landing-signal > span, .landing-kicker { font-size: var(--type-caption); }
+.landing-signal button { font-size: var(--type-label); }
+.section-intro > p, .section-intro.split > p { font-size: 16px; }
+.failure-sequence article > span { font-size: var(--type-caption); }
+.failure-sequence article p { font-size: var(--type-body); }
+.comparison-copy p { font-size: 15px; }
+.neighborhood-sky, .landing-neighborhood > small, .comparison-vs,
+.protected-service small, .protected-service > b { font-size: var(--type-caption); }
+.protected-service strong { font-size: var(--type-body); }
+.response-loop article > span, .response-evidence span, .response-evidence small { font-size: var(--type-caption); }
+.response-loop strong { font-size: 17px; }
+.response-loop p { font-size: var(--type-body); }
+.preview-sidebar span { font-size: var(--type-label); }
+.preview-top, .preview-kpis small, .preview-grid > div > span { font-size: var(--type-visual); }
+.preview-feed p { font-size: var(--type-caption); }
+.preview-feed b { font-size: var(--type-label); }
+.platform-modules span, .platform-modules b { font-size: var(--type-caption); }
+.platform-modules strong { font-size: 18px; }
+.platform-modules p { font-size: var(--type-body); }
+.outcome-numbers small, .landing-outcome > p, .landing-cta > div > span,
+.landing-footer span, .landing-footer p { font-size: var(--type-caption); }
+.landing-cta button { font-size: var(--type-control); }
+.landing-footer b { font-size: 15px; }
+
+/* Digital-twin annotations */
+.twin-loading { font-size: var(--type-caption); }
+.twin-selected-tag { font-size: var(--type-visual); }
+.critical-tag, .critical-tag b, .twin-readout > span, .twin-help { font-size: var(--type-visual); }
+.twin-readout small { font-size: var(--type-caption); }
+
+/* Console shell and page headers */
+.console-brand strong { font-size: 14px; }
+.console-brand small, .nav-label, .sidebar-health small, .sidebar-foot > button,
+.console-breadcrumb, .console-scenario, .operator-badge small { font-size: var(--type-caption); }
+.console-sidebar nav button { font-size: var(--type-control); }
+.sidebar-health strong, .operator-badge strong { font-size: var(--type-label); }
+.console-search input, .console-scenario select { font-size: var(--type-label); }
+.command-code, .operating-pill { font-size: var(--type-caption); }
+.command-titlebar p { font-size: var(--type-body); }
+.command-title-actions button { font-size: var(--type-label); }
+
+/* Command center data panels */
+.command-kpis span, .command-kpis small, .command-panel-head span,
+.demand-summary span, .asset-strip span, .decision-list span,
+.decision-feed .command-panel-head > b, .timeline-clock span, .timeline-legend { font-size: var(--type-caption); }
+.command-panel-head h2 { font-size: 16px; }
+.demand-summary strong, .asset-strip strong, .decision-list strong { font-size: var(--type-control); }
+.arm-switch button, .decision-list p, .monitoring-state p, .feed-link { font-size: var(--type-caption); }
+.monitoring-state strong { font-size: var(--type-body); }
+
+/* Copilot */
+.ai-head > span, .ai-explainer > p, .ai-prompts button, .ai-explainer form input,
+.ai-answer p, .agent-working, .agent-evidence strong, .agent-trace summary,
+.agent-trace li strong, .agent-trace li span { font-size: var(--type-caption); }
+.ai-head b, .ai-answer span, .agent-evidence span, .agent-evidence small { font-size: var(--type-visual); }
+.ai-explainer h3 { font-size: 16px; }
+
+/* Story, replay, and operational evidence */
+.story-topline, .story-step, .story-copy > p:not(.story-body), .story-value span,
+.transformer-shell > span, .gauge-labels, .outage-line, .control-action small,
+.critical-service span, .outcome-column span, .outcome-column small,
+.outcome-reduction, .story-legend, .story-controls > span { font-size: var(--type-caption); }
+.pair-metric > span, .pair-metric small, .pair-metric strong i,
+.feeder-label span, .locality-title p, .locality-arm > div span,
+.locality-arm > p, .locality-divider, .locality-actions > span,
+.locality-actions p, .locality-actions div strong, .locality-actions div small,
+.action-groups article span, .quiet-state span, .fairness-live span,
+.fairness-live small, .tier-legend, .ledger-preview > span,
+.ledger-preview > div, .current-time span, .timeline-labels { font-size: var(--type-caption); }
+.dt-cell { font-size: var(--type-visual); }
+.action-groups article strong { font-size: var(--type-label); }
+
+/* Simulation and assurance */
+.console-content .eyebrow, .console-content .panel-heading > span,
+.console-content .status-dot, .console-content .form-grid label,
+.console-content .advanced-grid label, .console-content .method-form label,
+.console-content .run-progress span, .console-content .run-identity span,
+.console-content .comparison-head, .console-content .comparison-row small,
+.console-content .result-actions span, .console-content .source-chip,
+.console-content .mini-stats span, .console-content .event-list small,
+.console-content .event-list em, .console-content .panel-note,
+.console-content .success-note, .console-content .message-preview span,
+.method-index, .input-provenance, .result-verdict span, .result-verdict small,
+.method-stats span, .reason-list span, .method-empty, .verified-number span,
+.verified-number small, .baseline-compare span, .guardrail-strip span { font-size: var(--type-caption); }
+.console-content .lede, .console-content .preflight-grid p { font-size: 16px; }
+.console-content .text-button { font-size: var(--type-control); }
+.console-content .section-note, .console-content .capacity-stat span,
+.console-content .message-preview p, .console-content .compact-empty,
+.evidence-ladder p, .method-heading > p, .guardrail-strip p { font-size: var(--type-control); }
+.console-content .comparison-row strong { font-size: var(--type-body); }
+.console-content .event-list strong { font-size: var(--type-label); }
+
+/* Source banner */
+.provenance-copy > span, .provenance-meta span { font-size: var(--type-caption); }
+.provenance-copy p { font-size: var(--type-control); }
+.provenance-meta strong, .recording-provenance > button { font-size: var(--type-label); }
+
+@media (max-width: 720px) {
+  .landing-nav { min-height: 68px; }
+  .nav-launch { font-size: var(--type-label); }
+  .mobile-console-nav button { font-size: var(--type-visual); }
+  .command-titlebar p, .provenance-copy p { font-size: var(--type-control); }
 }

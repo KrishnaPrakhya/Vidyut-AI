@@ -984,6 +984,47 @@
       "observability": "ObservabilityStatus"
     }
   },
+  "agentic_copilot": {
+    "endpoint": "POST http://localhost:3000/api/ai/explain",
+    "runtime": "Next.js Node.js route handler",
+    "orchestrator": "LangGraph",
+    "model_provider": "Groq",
+    "server_secret": "GROQ_API_KEY",
+    "intents": [
+      "risk",
+      "compare",
+      "resident",
+      "incident",
+      "general"
+    ],
+    "graph_nodes": [
+      "ground_context",
+      "plan_request",
+      "intent specialist",
+      "verify_claims",
+      "repair_answer when required",
+      "finalize"
+    ],
+    "response_fields": [
+      "explanation",
+      "intent",
+      "audience",
+      "confidence",
+      "evidence",
+      "trace",
+      "model",
+      "advisory_only",
+      "orchestrator",
+      "duration_ms"
+    ],
+    "safety_boundary": "The graph receives curated simulation evidence and has no actuation tool, command repository or backend control import.",
+    "display_requirements": [
+      "Keep simulated and advisory labels visible.",
+      "Show cited evidence beside the answer.",
+      "Expose the coarse graph trace without hidden model reasoning.",
+      "Never describe confidence as forecast accuracy."
+    ]
+  },
   "display_rules": {
     "units": {
       "power": "kW",

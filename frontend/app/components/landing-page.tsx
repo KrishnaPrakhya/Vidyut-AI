@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
 import { useMemo, useState } from "react";
 import type { Recording } from "../types";
@@ -49,6 +50,32 @@ export function LandingPage({ recording, online, onEnter, onWatch }: LandingPage
     .reverse()
     .map((frame) => frame.arms.baseline.dts.find((dt) => dt.id === selectedDt))
     .find((dt) => (dt?.loading_pct ?? 0) >= 100) : undefined, [focusTick?.t, recording, selectedDt]);
+  // The comparison must never depend on selectedDt: a click in the hero twin would otherwise
+  // silently move it to a transformer with no outage and the contrast would vanish.
+  const divergence = useMemo(() => {
+    if (!recording) return null;
+    let best: { tick: number; clock: string; dtId: string; baselineDark: number; vidyutDark: number; vidyutLoad: number } | null = null;
+    for (const frame of recording.ticks) {
+      const baselineById = new Map(frame.arms.baseline.dts.map((dt) => [dt.id, dt]));
+      for (const vidyutDt of frame.arms.vidyut.dts) {
+        const baselineDt = baselineById.get(vidyutDt.id);
+        if (!baselineDt) continue;
+        const gap = baselineDt.households_dark - vidyutDt.households_dark;
+        if (gap > (best ? best.baselineDark - best.vidyutDark : 0)) {
+          best = {
+            tick: frame.t,
+            clock: frame.clock,
+            dtId: vidyutDt.id,
+            baselineDark: baselineDt.households_dark,
+            vidyutDark: vidyutDt.households_dark,
+            vidyutLoad: vidyutDt.loading_pct,
+          };
+        }
+      }
+    }
+    return best;
+  }, [recording]);
+
   const totals = recording?.summary.arms;
   const prevented = totals
     ? Math.round(100 * (1 - totals.vidyut.homes_dark_minutes / totals.baseline.homes_dark_minutes))
@@ -105,6 +132,39 @@ export function LandingPage({ recording, online, onEnter, onWatch }: LandingPage
         <h2>A hot transformer should not mean a dark neighborhood.</h2>
         <p>Conventional protection notices the danger after the limit is crossed. Its safest available response can be the bluntest one: disconnect every home behind that transformer.</p>
       </div>
+      <motion.figure
+        className="failure-scene"
+        initial={{ opacity: 0, scale: reduced ? 1 : 1.02 }}
+        whileInView={{ opacity: 1, scale: 1 }}
+        viewport={{ once: true, amount: .3 }}
+        transition={{ duration: .9, ease: [.16, 1, .3, 1] }}
+      >
+        <Image
+          src="/vidyut-grid-preview.png"
+          alt="An isometric distribution network at night. Most transformers glow green and their homes are lit. One transformer glows orange, and the houses behind it are dark. A hospital nearby stays lit."
+          width={1656}
+          height={932}
+          priority
+          sizes="(max-width: 1100px) 100vw, 1400px"
+        />
+        <span className="scene-pin overloaded" style={{ left: "74.5%", top: "17%" }}>
+          <i />
+          <b>Over its limit<em>protection trips</em></b>
+        </span>
+        <span className="scene-pin dark" style={{ left: "88%", top: "33%" }}>
+          <i />
+          <b>Every home behind it<em>goes dark</em></b>
+        </span>
+        <span className="scene-pin safe" style={{ left: "72%", top: "72%" }}>
+          <i />
+          <b>Critical service<em>must never fail</em></b>
+        </span>
+        <figcaption>
+          One transformer past its limit. Seventy homes dark behind it. Nobody chose which — the
+          equipment simply tripped.
+        </figcaption>
+      </motion.figure>
+
       <div className="failure-sequence">
         <article><span>16:15</span><i className="heat-symbol">☀</i><strong>Heatwave demand rises</strong><p>Cooling demand pushes one locality toward its equipment limit.</p></article>
         <b>→</b>
@@ -115,12 +175,41 @@ export function LandingPage({ recording, online, onEnter, onWatch }: LandingPage
     </section>
 
     <section className="blackout-comparison">
-      <div className="comparison-copy"><span className="landing-kicker">SAME DEMAND · DIFFERENT CONTROL</span><h2>One event. Two outcomes.</h2><p>At the same recorded moment, conventional protection has disconnected the locality. Vidyut acted earlier and keeps it energised.</p></div>
-      <div className="neighborhood-compare">
-        <Neighborhood dark={baselineDt?.households_dark ?? 70} label="BASELINE" />
-        <div className="comparison-vs"><span>same</span><b>VS</b><span>demand</span></div>
-        <Neighborhood dark={vidyutDt?.households_dark ?? 0} label="VIDYUT" />
+      <div className="comparison-copy">
+        <span className="landing-kicker">SAME DEMAND · DIFFERENT CONTROL</span>
+        <h2>One event. Two outcomes.</h2>
+        <p>
+          {divergence
+            ? `At ${divergence.clock} on transformer ${divergence.dtId}, conventional protection has already disconnected the locality. Vidyut acted an hour earlier and kept every home on.`
+            : "At the same recorded moment, conventional protection has disconnected the locality. Vidyut acted earlier and keeps it energised."}
+        </p>
       </div>
+
+      <div className="outcome-pair">
+        <article className="outcome baseline">
+          <header><span>Today&apos;s protection</span><i /></header>
+          <Neighborhood dark={divergence?.baselineDark ?? 70} label="BASELINE" />
+          <footer>
+            <strong>{divergence?.baselineDark ?? 70}</strong>
+            <span>of 70 homes without power</span>
+          </footer>
+        </article>
+
+        <div className="outcome-divider"><span>same</span><b>VS</b><span>demand</span></div>
+
+        <article className="outcome vidyut">
+          <header><span>With Vidyut</span><i /></header>
+          <Neighborhood dark={divergence?.vidyutDark ?? 0} label="VIDYUT" />
+          <footer>
+            <strong>{divergence?.vidyutDark ?? 0}</strong>
+            <span>
+              of 70 homes without power
+              {divergence ? ` · transformer at ${formatNumber(divergence.vidyutLoad, 0)}%` : ""}
+            </span>
+          </footer>
+        </article>
+      </div>
+
       <div className="protected-service"><i>+</i><span><small>Critical service on this network</small><strong>Hospital remains powered</strong></span><b>PROTECTED</b></div>
     </section>
 
