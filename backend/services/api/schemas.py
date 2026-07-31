@@ -49,6 +49,23 @@ class DeliveryReceiptRequest(BaseModel):
     error: str | None = Field(default=None, max_length=2000)
 
 
+class FlexibilityEstimateRequest(BaseModel):
+    aggregate_kw: list[list[float | None]]
+    ambient_c: list[list[float | None]]
+    registered_capacity_kw: float | None = Field(default=None, ge=0.0)
+    setpoint_c: float = Field(default=24.0, ge=15.0, le=35.0)
+
+
+class EventVerificationRequest(BaseModel):
+    history_kw: list[list[float | None]]
+    observed_kw: list[float | None]
+    event_start_index: int = Field(ge=0)
+    event_end_index: int = Field(gt=0)
+    committed_reduction_kw: float = Field(default=0.0, ge=0.0)
+    method: Literal["high_4_of_5", "ten_in_ten"] = "high_4_of_5"
+    adjustment_intervals: int = Field(default=4, ge=0, le=16)
+
+
 def arm_payload(snapshot: ArmSnapshot) -> dict:
     return {
         "feeders": [asdict(f) for f in snapshot.feeders],

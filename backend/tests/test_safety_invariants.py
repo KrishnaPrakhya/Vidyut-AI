@@ -7,7 +7,7 @@ import pytest
 
 from services.sim.run import simulate_arm
 
-NILM_DIR = Path(__file__).resolve().parents[1] / "services" / "nilm"
+OBSERVABILITY_DIR = Path(__file__).resolve().parents[1] / "services" / "observability"
 
 
 def _imported_modules(path: Path) -> set[str]:
@@ -21,11 +21,11 @@ def _imported_modules(path: Path) -> set[str]:
     return modules
 
 
-def test_nilm_does_not_import_actuation() -> None:
-    for path in NILM_DIR.rglob("*.py"):
+def test_observability_does_not_import_actuation() -> None:
+    for path in OBSERVABILITY_DIR.rglob("*.py"):
         for module in _imported_modules(path):
             assert not module.startswith("services.actuation"), (
-                f"{path.name} imports {module}; NILM is observability and must never actuate"
+                f"{path.name} imports {module}; observability must never actuate"
             )
 
 

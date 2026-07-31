@@ -6,7 +6,6 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Callable
 
 from services.dispatch.outbox import Notification, Outbox
 
@@ -65,7 +64,6 @@ def dispatch(
     outbox: Outbox,
     batch_size: int = 50,
     notification_ids: list[int] | None = None,
-    acknowledge_batch: Callable[[list[int]], None] | None = None,
 ) -> DispatchReport:
     notifications = outbox.pending()
     url = webhook_url()
@@ -114,13 +112,6 @@ def dispatch(
                 delivered=delivered,
                 error=str(error),
             )
-        batch_ids = [
-            int(row["notification_id"])
-            for row in rows
-            if "notification_id" in row
-        ]
-        if acknowledge_batch is not None and batch_ids:
-            acknowledge_batch(batch_ids)
         delivered += len(batch)
         outbox.acknowledge(len(batch))
 

@@ -281,7 +281,6 @@ class Notification(Base):
 
 class NotificationDelivery(Base):
     __tablename__ = "notification_delivery"
-    __table_args__ = (UniqueConstraint("notification_id"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     notification_id: Mapped[int] = mapped_column(

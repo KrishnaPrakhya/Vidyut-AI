@@ -62,7 +62,8 @@ REQUIRED_FORECAST_MODELS = {"seasonal_naive", "chronos_finetuned"}
 
 def test_models_endpoint_is_honest_about_what_is_trained(client: TestClient) -> None:
     body = client.get("/api/models").json()
-    assert {"forecast", "nilm"} <= set(body["models"])
+    assert set(body["models"]) == {"forecast"}
+    assert body["observability"]["ready"] is True
 
     for name, artifact in body["models"].items():
         if artifact["trained"]:
@@ -117,8 +118,51 @@ def test_model_registry_distinguishes_evaluation_from_runtime(
     assert models["forecast"]["trained"] is True
     assert models["forecast"]["evaluation_only"] is True
     assert models["forecast"]["runtime_ready"] is False
-    assert models["nilm"]["trained"] is False
-    assert models["nilm"]["runtime_ready"] is False
+
+
+def test_observability_status_states_its_boundary(client: TestClient) -> None:
+    body = client.get("/api/observability/status").json()
+    assert body["ready"] is True
+    assert body["component"] == "flexibility_assurance"
+    assert any("does not identify" in boundary for boundary in body["boundaries"])
+
+
+def test_observability_estimate_and_verification_endpoints(client: TestClient) -> None:
+    temperatures = [
+        [21 + day, 22 + day, 24 + day, 27 + day, 30 + day, 32 + day, 28 + day, 24 + day]
+        for day in range(7)
+    ]
+    loads = [
+        [8 + 1.2 * max(value - 24, 0) for value in day]
+        for day in temperatures
+    ]
+    estimate = client.post(
+        "/api/observability/flexibility/estimate",
+        json={
+            "aggregate_kw": loads,
+            "ambient_c": temperatures,
+            "registered_capacity_kw": 5.0,
+        },
+    )
+    assert estimate.status_code == 200
+    assert estimate.json()["ready"] is True
+    assert estimate.json()["source"] == "estimated"
+
+    history = [[value] * 8 for value in (100, 110, 120, 130, 140)]
+    observed = [125, 125, 125, 125, 105, 105, 125, 125]
+    verification = client.post(
+        "/api/observability/events/verify",
+        json={
+            "history_kw": history,
+            "observed_kw": observed,
+            "event_start_index": 4,
+            "event_end_index": 6,
+            "committed_reduction_kw": 20,
+        },
+    )
+    assert verification.status_code == 200
+    assert verification.json()["realised_reduction_kw"] == pytest.approx(20.0)
+    assert verification.json()["source"] == "verified"
 
 
 def test_summary_reports_both_arms_and_deltas(client: TestClient, ready_run: str) -> None:
@@ -127,6 +171,14 @@ def test_summary_reports_both_arms_and_deltas(client: TestClient, ready_run: str
     assert set(body["arms"]) == {"baseline", "vidyut"}
     assert "unserved_kwh" in body["deltas"]
     assert body["arms"]["vidyut"]["critical_uptime_pct"] == pytest.approx(100.0)
+
+
+def test_run_flexibility_uses_registered_devices(client: TestClient, ready_run: str) -> None:
+    body = client.get(f"/api/runs/{ready_run}/flexibility").json()
+    assert body["registered"]["source"] == "registered"
+    assert body["registered"]["capacity_kw"] > 0
+    assert len(body["available"]["profile_kw"]) == SHORT_RUN_TICKS
+    assert body["realised"]["source"] == "simulation_measurement"
 
 
 def test_events_are_filterable(client: TestClient, ready_run: str) -> None:
@@ -221,6 +273,16 @@ def test_fault_injection_rejects_unknown_transformer(
     response = client.post(
         f"/api/runs/{ready_run}/inject",
         json={"type": "dt_fault", "magnitude": 1.0, "dt_id": "missing"},
+    )
+    assert response.status_code == 422
+
+
+def test_injection_tick_must_be_inside_short_run(
+    client: TestClient, ready_run: str
+) -> None:
+    response = client.post(
+        f"/api/runs/{ready_run}/inject",
+        json={"type": "heatwave", "magnitude": 0.5, "from_tick": SHORT_RUN_TICKS},
     )
     assert response.status_code == 422
 
