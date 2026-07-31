@@ -1,0 +1,13 @@
+{
+  "run_id": "28b6aab49a6a",
+  "status": "pending",
+  "injections": [
+    {
+      "type": "heatwave",
+      "magnitude": 0.6,
+      "from_tick": 2,
+      "dt_id": null
+    }
+  ],
+  "resimulating_from_tick": 2
+}

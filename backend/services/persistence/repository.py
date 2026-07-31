@@ -298,10 +298,7 @@ def pending_notification_ids(session: Session, run_id: str) -> list[int]:
             )
             .where(
                 Notification.run_id == run_id,
-                (
-                    NotificationDelivery.id.is_(None)
-                    | (NotificationDelivery.status == "failed")
-                ),
+                NotificationDelivery.id.is_(None),
             )
             .order_by(Notification.id)
         ).scalars()
@@ -312,78 +309,19 @@ def record_notification_dispatch(
     session: Session, notification_ids: list[int], provider: str = "n8n"
 ) -> None:
     now = datetime.now(timezone.utc)
-    delivery_insert = pg_insert(NotificationDelivery)
-    rows = [
-        {
-            "notification_id": notification_id,
-            "provider": provider,
-            "status": "dispatched",
-            "dispatched_at": now,
-            "delivered_at": None,
-            "error": None,
-        }
-        for notification_id in notification_ids
-    ]
-    if rows:
-        session.execute(
-            delivery_insert.values(rows).on_conflict_do_update(
-                index_elements=["notification_id"],
-                set_={
-                    "provider": delivery_insert.excluded.provider,
-                    "status": delivery_insert.excluded.status,
-                    "dispatched_at": delivery_insert.excluded.dispatched_at,
-                    "delivered_at": None,
-                    "error": None,
-                },
-            )
-        )
-
-
-def pending_notification_rows(session: Session, run_id: str) -> list[tuple[int, dict]]:
-    rows = session.execute(
-        select(Notification)
-        .outerjoin(
-            NotificationDelivery,
-            NotificationDelivery.notification_id == Notification.id,
-        )
-        .where(
-            Notification.run_id == run_id,
-            (
-                NotificationDelivery.id.is_(None)
-                | (NotificationDelivery.status == "failed")
-            ),
-        )
-        .order_by(Notification.id)
-    ).scalars()
-    fields = (
-        "tick",
-        "clock",
-        "channel",
-        "event_type",
-        "dt_id",
-        "feeder_id",
-        "households",
-        "reason_code",
-        "message",
-        "tariff_multiplier",
-        "expected_reduction_kw",
-        "window_minutes",
-    )
-    return [
-        (
-            row.id,
+    _bulk(
+        session,
+        NotificationDelivery,
+        [
             {
-                field: (
-                    float(getattr(row, field))
-                    if field in {"tariff_multiplier", "expected_reduction_kw"}
-                    and getattr(row, field) is not None
-                    else getattr(row, field)
-                )
-                for field in fields
-            },
-        )
-        for row in rows
-    ]
+                "notification_id": notification_id,
+                "provider": provider,
+                "status": "dispatched",
+                "dispatched_at": now,
+            }
+            for notification_id in notification_ids
+        ],
+    )
 
 
 def update_notification_delivery(

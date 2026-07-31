@@ -1,0 +1,34 @@
+{
+  "run_id": "28b6aab49a6a",
+  "registered": {
+    "capacity_kw": 3019.101,
+    "households": 910,
+    "devices": 1866,
+    "capacity_by_kind_kw": {
+      "ac": 1338.552,
+      "bess": 98.06,
+      "ev_charger": 242.838,
+      "pump": 234.197,
+      "water_heater": 1105.454
+    },
+    "source": "registered",
+    "method": "controllable_device_nameplate"
+  },
+  "available": {
+    "profile_kw": [
+      294.481,
+      294.481,
+      294.481,
+      "... 8 items total"
+    ],
+    "peak_kw": 294.481,
+    "energy_kwh": 588.962,
+    "source": "registered_schedule",
+    "method": "active_controllable_load"
+  },
+  "realised": {
+    "reduction_kwh": 0.0,
+    "source": "simulation_measurement",
+    "method": "natural_minus_controlled_load"
+  }
+}

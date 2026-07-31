@@ -15,6 +15,8 @@ from services.api.schemas import (
     CreateRunRequest,
     CreateRunResponse,
     DeliveryReceiptRequest,
+    EventVerificationRequest,
+    FlexibilityEstimateRequest,
     InjectRequest,
     delta_payload,
     tick_payload,
@@ -22,23 +24,28 @@ from services.api.schemas import (
 )
 from services.api.store import store
 from services.dispatch.n8n import dispatch
-from services.dispatch.outbox import Notification as DispatchNotification
-from services.dispatch.outbox import Outbox
+from services.observability import (
+    engine_status,
+    estimate_weather_opportunity,
+    registered_availability_profile,
+    registered_envelope,
+    verify_event,
+)
 from services.persistence.engine import check as db_check
 from services.persistence.engine import create_schema, session_scope
-from services.persistence.models import Run
 from services.persistence.queries import (
     fairness_leaderboard_rows,
     household_history,
     household_profile,
 )
 from services.persistence.repository import (
-    pending_notification_rows,
+    pending_notification_ids,
     record_notification_dispatch,
     update_notification_delivery,
 )
 from services.sim.injection import Injection
 from services.sim.scenario import available_scenarios
+from services.timebase import TICK_HOURS
 
 DEFAULT_PLAYBACK_TICKS_PER_SECOND = 4.0
 
@@ -76,6 +83,42 @@ def health() -> dict:
 @app.get("/api/scenarios")
 def scenarios() -> dict:
     return {"scenarios": available_scenarios()}
+
+
+@app.get("/api/observability/status")
+def observability_status() -> dict:
+    return engine_status()
+
+
+@app.post("/api/observability/flexibility/estimate")
+def estimate_flexibility(request: FlexibilityEstimateRequest) -> dict:
+    try:
+        result = estimate_weather_opportunity(
+            request.aggregate_kw,
+            request.ambient_c,
+            request.registered_capacity_kw,
+            request.setpoint_c,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return result.to_dict()
+
+
+@app.post("/api/observability/events/verify")
+def verify_flexibility_event(request: EventVerificationRequest) -> dict:
+    try:
+        result = verify_event(
+            request.history_kw,
+            request.observed_kw,
+            request.event_start_index,
+            request.event_end_index,
+            request.committed_reduction_kw,
+            request.method,
+            request.adjustment_intervals,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return result.to_dict()
 
 
 @app.post("/api/runs", response_model=CreateRunResponse)
@@ -124,6 +167,32 @@ def run_summary(run_id: str) -> dict:
         "ready": True,
         "arms": {"baseline": totals_payload(baseline), "vidyut": totals_payload(vidyut)},
         "deltas": delta_payload(baseline, vidyut),
+    }
+
+
+@app.get("/api/runs/{run_id}/flexibility")
+def run_flexibility(run_id: str) -> dict:
+    record = _require_record(run_id)
+    if record.result is None:
+        raise HTTPException(status_code=409, detail="run is not ready")
+    arm = record.result.arms["vidyut"]
+    envelope = registered_envelope(arm.world.households.values())
+    availability = registered_availability_profile(arm.world, len(arm.snapshots))
+    return {
+        "run_id": run_id,
+        "registered": envelope.to_dict(),
+        "available": {
+            "profile_kw": availability,
+            "peak_kw": round(max(availability, default=0.0), 3),
+            "energy_kwh": round(sum(availability) * TICK_HOURS, 3),
+            "source": "registered_schedule",
+            "method": "active_controllable_load",
+        },
+        "realised": {
+            "reduction_kwh": round(arm.world.flexibility_kwh, 3),
+            "source": "simulation_measurement",
+            "method": "natural_minus_controlled_load",
+        },
     }
 
 
@@ -196,20 +265,7 @@ def run_events(
 
 @app.get("/api/runs/{run_id}/notifications")
 def run_notifications(run_id: str) -> dict:
-    record = store.get(run_id)
-    durable = _durable_notifications(run_id)
-    if durable is not None:
-        return {
-            "run_id": run_id,
-            "ready": True,
-            "count": len(durable),
-            "notifications": [
-                {"notification_id": notification_id, **payload}
-                for notification_id, payload in durable
-            ],
-        }
-    if record is None:
-        raise HTTPException(status_code=404, detail="run not found")
+    record = _require_record(run_id)
     if record.result is None:
         return {"run_id": run_id, "ready": False, "notifications": []}
 
@@ -224,47 +280,28 @@ def run_notifications(run_id: str) -> dict:
 
 @app.post("/api/runs/{run_id}/notifications/dispatch")
 def dispatch_notifications(run_id: str) -> dict:
-    record = store.get(run_id)
-    durable = _durable_notifications(run_id)
-    acknowledge_batch = None
-    if durable is not None:
-        notification_ids = [notification_id for notification_id, _ in durable]
-        outbox = Outbox(
-            [DispatchNotification(**payload) for _, payload in durable]
-        )
-
-        def acknowledge_batch(ids: list[int]) -> None:
-            with session_scope() as session:
-                if session is None:
-                    raise RuntimeError("database became unavailable during dispatch")
-                record_notification_dispatch(session, ids)
-
-    else:
-        if record is None:
-            raise HTTPException(status_code=404, detail="run not found")
-        if record.result is None:
-            raise HTTPException(status_code=409, detail="run is not ready")
-        notification_ids = []
-        outbox = record.result.arms["vidyut"].outbox
-    report = dispatch(
-        run_id,
-        outbox,
-        notification_ids=notification_ids,
-        acknowledge_batch=acknowledge_batch,
-    )
-    if durable is not None and report.delivered and record is not None and record.result is not None:
-        record.result.arms["vidyut"].outbox.acknowledge(report.delivered)
-    return {"run_id": run_id, **report.to_dict()}
-
-
-def _durable_notifications(run_id: str) -> list[tuple[int, dict]] | None:
+    record = _require_record(run_id)
+    if record.result is None:
+        raise HTTPException(status_code=409, detail="run is not ready")
+    notification_ids: list[int] = []
     try:
         with session_scope() as session:
-            if session is None or session.get(Run, run_id) is None:
-                return None
-            return pending_notification_rows(session, run_id)
+            if session is not None:
+                notification_ids = pending_notification_ids(session, run_id)
     except Exception:
-        return None
+        notification_ids = []
+    report = dispatch(
+        run_id,
+        record.result.arms["vidyut"].outbox,
+        notification_ids=notification_ids,
+    )
+    if report.delivered and notification_ids:
+        with session_scope() as session:
+            if session is not None:
+                record_notification_dispatch(
+                    session, notification_ids[: report.delivered]
+                )
+    return {"run_id": run_id, **report.to_dict()}
 
 
 @app.post("/api/notifications/{notification_id}/delivery")

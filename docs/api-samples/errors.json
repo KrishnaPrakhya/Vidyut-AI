@@ -1,0 +1,34 @@
+{
+  "404_unknown_run": {
+    "status": 404,
+    "body": {
+      "detail": "run not found"
+    }
+  },
+  "404_unknown_scenario": {
+    "status": 404,
+    "body": {
+      "detail": "unknown scenario 'monsoon'"
+    }
+  },
+  "422_bad_param": {
+    "status": 422,
+    "body": {
+      "detail": [
+        {
+          "type": "less_than_equal",
+          "loc": [
+            "body",
+            "params",
+            "... 3 items total"
+          ],
+          "msg": "Input should be less than or equal to 1",
+          "input": 1.7,
+          "ctx": {
+            "le": 1.0
+          }
+        }
+      ]
+    }
+  }
+}

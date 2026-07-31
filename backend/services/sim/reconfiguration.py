@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from services.sim.topology import switches_in_loop
+from services.sim.topology import is_radial, switches_in_loop
 from services.sim.world import PowerFlowResult, World, solve_power_flow
 
 VM_MIN_PU = 0.95
@@ -92,11 +92,12 @@ def evaluate_reconfiguration(world: World, current: PowerFlowResult) -> Reconfig
         }
         _set_switches(world, {pair.close_switch: True, pair.open_switch: False})
 
-        result = solve_power_flow(world)
-        if _feasible(result):
-            score = objective(result)
-            if best is None or score < best.score:
-                best = ReconfigCandidate(pair=pair, score=score, result=result)
+        if is_radial(world.ctx):
+            result = solve_power_flow(world)
+            if _feasible(result):
+                score = objective(result)
+                if best is None or score < best.score:
+                    best = ReconfigCandidate(pair=pair, score=score, result=result)
 
         _set_switches(world, original)
 
