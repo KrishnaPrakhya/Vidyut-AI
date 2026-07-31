@@ -50,9 +50,11 @@ class VidyutController:
     shifted_runs: set[int] = field(default_factory=set)
     last_price_signal_tick: dict[str, int] = field(default_factory=dict)
     last_curtailed_tick: dict[str, int] = field(default_factory=dict)
+    last_forecast: dict | None = None
 
     def act(self, world: World, tick: int, result: PowerFlowResult) -> list[TickEvent]:
         forecast = self.forecaster.predict(tick, max(FORECAST_HORIZON, SHIFT_HORIZON))
+        self._record_headline_forecast(world, forecast)
 
         self._tier1_shift(world, tick, forecast)
         self._tier1_reconfigure(world, tick, result)
@@ -61,6 +63,23 @@ class VidyutController:
             self._tier3_last_resort(world, tick, result)
 
         return self.state.drain()
+
+    def _record_headline_forecast(self, world: World, forecast: np.ndarray) -> None:
+        if forecast.size == 0:
+            self.last_forecast = None
+            return
+
+        safe_limits = np.array([world.safe_limit_kw(dt_id) for dt_id in world.dt_ids])
+        headroom = forecast[:, :FORECAST_HORIZON].max(axis=1) / np.maximum(safe_limits, 1e-6)
+        row = int(np.argmax(headroom))
+        dt_id = world.dt_ids[row]
+
+        self.last_forecast = {
+            "dt_id": dt_id,
+            "horizon_kw": [round(float(v), 1) for v in forecast[row, :FORECAST_HORIZON]],
+            "safe_limit_kw": round(float(safe_limits[row]), 1),
+            "rating_kw": round(world.rating_kw(dt_id), 1),
+        }
 
     # Tier 1 - steady state, no comfort impact
 

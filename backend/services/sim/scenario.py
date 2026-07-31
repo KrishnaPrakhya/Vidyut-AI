@@ -29,8 +29,30 @@ class Scenario:
         return 1.0 - self.critical_share - self.essential_share
 
 
-def load_scenario(name: str) -> Scenario:
+OVERRIDABLE = {
+    "ami_penetration",
+    "connected_device_penetration",
+    "ev_penetration",
+    "critical_share",
+    "essential_share",
+    "peak_multiplier",
+    "tariff_rs_per_kwh",
+}
+
+
+def available_scenarios() -> list[str]:
+    return sorted(path.stem for path in SCENARIO_DIR.glob("*.yaml"))
+
+
+def load_scenario(name: str, overrides: dict[str, float] | None = None) -> Scenario:
     path = SCENARIO_DIR / f"{name}.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"unknown scenario {name!r}")
     with path.open() as f:
         raw = yaml.safe_load(f)
+
+    for key, value in (overrides or {}).items():
+        if key in OVERRIDABLE and value is not None:
+            raw[key] = value
+
     return Scenario(name=name, **raw)

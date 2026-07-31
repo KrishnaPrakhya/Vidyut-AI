@@ -45,6 +45,7 @@ class ArmSnapshot:
     tie_switches: list[dict]
     metrics: ArmMetrics
     events: list[TickEvent]
+    forecast: dict | None = None
 
 
 @dataclass

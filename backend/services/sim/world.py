@@ -46,6 +46,7 @@ class World:
     feeder_head_line: dict[str, int]
     dt_energized: dict[str, bool] = field(default_factory=dict)
     dt_reenergize_tick: dict[str, int] = field(default_factory=dict)
+    scheduled_faults: list[tuple[str, int, int]] = field(default_factory=list)
     unserved_kwh: float = 0.0
     served_kwh: float = 0.0
     critical_household_dark_minutes: float = 0.0
@@ -63,9 +64,11 @@ class World:
         return SAFE_LIMIT_FRACTION * self.rating_kw(dt_id)
 
 
-def build_world(arm: str, scenario_name: str, seed: int) -> World:
+def build_world(
+    arm: str, scenario_name: str, seed: int, params: dict[str, float] | None = None
+) -> World:
     rngs = make_rngs(seed)
-    scenario = load_scenario(scenario_name)
+    scenario = load_scenario(scenario_name, params)
     ctx = build_network(rngs["topology"])
     households = build_population(ctx, scenario, rngs["population"])
     demand = build_demand_model(households, scenario, rngs["profiles"])
@@ -160,6 +163,18 @@ def solve_power_flow(world: World) -> PowerFlowResult:
         feeder_losses_kw=feeder_losses,
         losses_kw=float(line_losses_kw.sum()),
     )
+
+
+def apply_scheduled_faults(world: World, t: int) -> list[str]:
+    faulted: list[str] = []
+    for dt_id, start, end in world.scheduled_faults:
+        if start <= t < end:
+            world.dt_energized[dt_id] = False
+            world.dt_reenergize_tick.pop(dt_id, None)
+            faulted.append(dt_id)
+        elif t == end:
+            world.dt_energized[dt_id] = True
+    return faulted
 
 
 def apply_loads(world: World, t: int) -> tuple[np.ndarray, np.ndarray, int]:

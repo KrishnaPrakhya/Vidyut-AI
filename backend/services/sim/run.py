@@ -8,9 +8,16 @@ from services.forecast.naive import DampedTrendForecaster
 from services.sim.controllers.base import Controller
 from services.sim.controllers.baseline import BaselineController
 from services.sim.controllers.vidyut import VidyutController
+from services.sim.injection import Injection, apply_injections
 from services.sim.metrics import ArmSnapshot, RunTotals, finalise, tick_snapshot
 from services.sim.scenario import N_TICKS
-from services.sim.world import World, apply_loads, build_world, solve_power_flow
+from services.sim.world import (
+    World,
+    apply_loads,
+    apply_scheduled_faults,
+    build_world,
+    solve_power_flow,
+)
 
 ARMS = ("baseline", "vidyut")
 
@@ -40,12 +47,23 @@ def make_controller(arm: str, world: World) -> Controller:
     return VidyutController(forecaster=DampedTrendForecaster(n_dt=len(world.dt_ids)))
 
 
-def simulate_arm(arm: str, scenario: str, seed: int, ticks: int = N_TICKS) -> ArmResult:
-    world = build_world(arm, scenario, seed)
+def simulate_arm(
+    arm: str,
+    scenario: str,
+    seed: int,
+    ticks: int = N_TICKS,
+    params: dict[str, float] | None = None,
+    injections: list[Injection] | None = None,
+) -> ArmResult:
+    world = build_world(arm, scenario, seed, params)
+    if injections:
+        apply_injections(world, injections)
+
     controller = make_controller(arm, world)
     snapshots: list[ArmSnapshot] = []
 
     for tick in range(ticks):
+        apply_scheduled_faults(world, tick)
         _, dt_kw, _ = apply_loads(world, tick)
         result = solve_power_flow(world)
         if not result.converged:
@@ -55,7 +73,9 @@ def simulate_arm(arm: str, scenario: str, seed: int, ticks: int = N_TICKS) -> Ar
             controller.forecaster.observe(tick, dt_kw)
 
         events = controller.act(world, tick, result)
-        snapshots.append(tick_snapshot(world, tick, result, dt_kw, events))
+        snapshot = tick_snapshot(world, tick, result, dt_kw, events)
+        snapshot.forecast = getattr(controller, "last_forecast", None)
+        snapshots.append(snapshot)
         world.actuation.prune(tick)
 
     return ArmResult(
@@ -66,11 +86,19 @@ def simulate_arm(arm: str, scenario: str, seed: int, ticks: int = N_TICKS) -> Ar
     )
 
 
-def simulate(scenario: str, seed: int, ticks: int = N_TICKS) -> RunResult:
+def simulate(
+    scenario: str,
+    seed: int,
+    ticks: int = N_TICKS,
+    params: dict[str, float] | None = None,
+    injections: list[Injection] | None = None,
+) -> RunResult:
     return RunResult(
         scenario=scenario,
         seed=seed,
-        arms={arm: simulate_arm(arm, scenario, seed, ticks) for arm in ARMS},
+        arms={
+            arm: simulate_arm(arm, scenario, seed, ticks, params, injections) for arm in ARMS
+        },
     )
 
 
