@@ -1,0 +1,1017 @@
+{
+  "document": {
+    "name": "Vidyut frontend handoff",
+    "version": "1.0.0",
+    "updated_on": "2026-07-31",
+    "purpose": "Shared product and API context for the frontend team",
+    "source_of_truth": {
+      "openapi": "http://localhost:8000/openapi.json",
+      "backend_routes": "backend/services/api/main.py",
+      "frontend_prototype": "frontend/app/page.tsx"
+    }
+  },
+  "project": {
+    "name": "Vidyut",
+    "summary": "Electrical distribution network simulation, load balancing, fairness accounting, registered flexibility observation and demand-response verification.",
+    "prototype_goal": "Explain and validate the backend before designing the production operator interface.",
+    "current_scope": [
+      "Run deterministic baseline and Vidyut simulations",
+      "Compare network, reliability and fairness outcomes",
+      "Inspect controller decisions and notification output",
+      "Show registered controllable capacity",
+      "Estimate weather-sensitive opportunity from aggregate AMI and weather history",
+      "Verify demand-response events against historical baselines"
+    ]
+  },
+  "environment": {
+    "frontend_development_url": "http://localhost:3000",
+    "backend_development_url": "http://localhost:8000",
+    "browser_environment_variable": "NEXT_PUBLIC_API_URL",
+    "browser_environment_default": "http://localhost:8000",
+    "websocket_development_url": "ws://localhost:8000",
+    "cors_development_origin": "http://localhost:3000",
+    "authentication": {
+      "current": "none",
+      "production_requirement": "Authentication and role-based authorization must be designed before public or utility deployment."
+    }
+  },
+  "domain": {
+    "scenarios": [
+      "normal",
+      "heatwave",
+      "ev_surge"
+    ],
+    "arms": [
+      "baseline",
+      "vidyut"
+    ],
+    "tick_minutes": 15,
+    "ticks_per_day": 96,
+    "run_statuses": [
+      "pending",
+      "running",
+      "ready",
+      "failed"
+    ],
+    "household_tiers": [
+      "critical",
+      "essential",
+      "standard"
+    ],
+    "device_kinds": [
+      "ac",
+      "water_heater",
+      "ev_charger",
+      "pump",
+      "bess"
+    ],
+    "control_tiers": {
+      "0": "Voluntary price signal",
+      "1": "Scheduled deferrable-load shift",
+      "2": "Connected-device curtailment or meter load limit",
+      "3": "Last-resort rotating interruption"
+    },
+    "safety_rules": [
+      "Critical-tier households must never receive selective disconnect or load-limit commands.",
+      "Observability must not issue actuation commands.",
+      "The baseline and Vidyut arms use the same scenario, seed, population and demand.",
+      "A run is not readable as a completed result until status equals ready."
+    ]
+  },
+  "quantity_semantics": {
+    "registered": {
+      "meaning": "Known controllable device nameplate capacity from the enrolled device registry.",
+      "frontend_label": "Registered",
+      "allowed_claim": "Known capability",
+      "disallowed_claim": "Detected from aggregate meter data"
+    },
+    "registered_schedule": {
+      "meaning": "Registered devices expected to be actively drawing power during each interval.",
+      "frontend_label": "Available"
+    },
+    "estimated": {
+      "meaning": "Weather-sensitive opportunity estimated from comparable aggregate AMI and ambient-temperature histories.",
+      "frontend_label": "Estimated",
+      "required_companions": [
+        "confidence",
+        "coverage_pct",
+        "method"
+      ],
+      "disallowed_claims": [
+        "AC detected",
+        "appliance-level measurement",
+        "guaranteed controllable capacity"
+      ]
+    },
+    "verified": {
+      "meaning": "Post-event difference between a historical baseline and observed event load.",
+      "frontend_label": "Verified",
+      "required_companions": [
+        "method",
+        "confidence",
+        "baseline_average_kw",
+        "observed_average_kw"
+      ]
+    },
+    "simulation_measurement": {
+      "meaning": "A quantity measured inside the deterministic simulator, not field telemetry.",
+      "frontend_label": "Simulated result"
+    }
+  },
+  "recommended_frontend_flows": [
+    {
+      "id": "startup",
+      "steps": [
+        "GET /api/health",
+        "GET /api/scenarios",
+        "GET /api/observability/status",
+        "GET /api/models"
+      ],
+      "ui_outcome": "Show service, database, available scenario, forecast artifact and observability readiness separately."
+    },
+    {
+      "id": "create_and_watch_run",
+      "steps": [
+        "POST /api/runs",
+        "Poll GET /api/runs/{run_id} until ready or failed, or connect to the WebSocket",
+        "GET /api/runs/{run_id}/summary",
+        "GET /api/runs/{run_id}/flexibility",
+        "GET /api/runs/{run_id}/events"
+      ],
+      "ui_outcome": "Show baseline versus Vidyut, registered flexibility, decisions and report access."
+    },
+    {
+      "id": "inject_and_resimulate",
+      "steps": [
+        "POST /api/runs/{run_id}/inject",
+        "Return the UI to a running state",
+        "Poll status again",
+        "Reload all run result resources"
+      ],
+      "ui_outcome": "Make it clear that injection replaces the result with a new generation of the same run."
+    },
+    {
+      "id": "estimate_opportunity",
+      "steps": [
+        "POST /api/observability/flexibility/estimate",
+        "Check ready",
+        "If ready is false, display reasons and do not present actionable capacity",
+        "If ready is true, present estimated and actionable values separately"
+      ]
+    },
+    {
+      "id": "verify_event",
+      "steps": [
+        "POST /api/observability/events/verify",
+        "Present baseline, observed load, realised reduction, energy and performance"
+      ]
+    }
+  ],
+  "api": {
+    "base_url": "http://localhost:8000",
+    "content_type": "application/json",
+    "standard_error": {
+      "detail": "string or FastAPI validation error array"
+    },
+    "common_status_codes": {
+      "200": "Success",
+      "404": "Requested run, household or resource not found",
+      "409": "Resource exists but is not in the required state",
+      "422": "Request parameter or body validation failed",
+      "500": "Simulation failed",
+      "503": "Database-dependent feature requested without a database"
+    },
+    "endpoints": [
+      {
+        "id": "health",
+        "method": "GET",
+        "path": "/api/health",
+        "params": {},
+        "response_type": "HealthResponse",
+        "screen_usage": "Global service indicator"
+      },
+      {
+        "id": "scenarios",
+        "method": "GET",
+        "path": "/api/scenarios",
+        "params": {},
+        "response_example": {
+          "scenarios": [
+            "normal",
+            "heatwave",
+            "ev_surge"
+          ]
+        },
+        "screen_usage": "Populate scenario selector; do not hardcode if this endpoint is available."
+      },
+      {
+        "id": "observability_status",
+        "method": "GET",
+        "path": "/api/observability/status",
+        "params": {},
+        "response_type": "ObservabilityStatus",
+        "screen_usage": "Observability readiness and boundaries"
+      },
+      {
+        "id": "estimate_flexibility",
+        "method": "POST",
+        "path": "/api/observability/flexibility/estimate",
+        "body": {
+          "aggregate_kw": {
+            "type": "array<array<number|null>>",
+            "required": true,
+            "shape": "days by intervals",
+            "rules": [
+              "Must be non-empty",
+              "Non-null values must be non-negative",
+              "Must have the same shape as ambient_c"
+            ]
+          },
+          "ambient_c": {
+            "type": "array<array<number|null>>",
+            "required": true,
+            "shape": "days by intervals",
+            "rules": [
+              "Must be non-empty",
+              "May contain negative Celsius values",
+              "Must have the same shape as aggregate_kw"
+            ]
+          },
+          "registered_capacity_kw": {
+            "type": "number|null",
+            "required": false,
+            "minimum": 0,
+            "default": null,
+            "behavior": "When present and the estimate is ready, caps the actionable profile."
+          },
+          "setpoint_c": {
+            "type": "number",
+            "required": false,
+            "minimum": 15,
+            "maximum": 35,
+            "default": 24
+          }
+        },
+        "response_type": "OpportunityEstimate",
+        "data_requirements": [
+          "At least 3 comparable days",
+          "At least 80 percent joint meter and weather coverage",
+          "At least 4 C ambient-temperature span",
+          "A reliable positive temperature association"
+        ]
+      },
+      {
+        "id": "verify_event",
+        "method": "POST",
+        "path": "/api/observability/events/verify",
+        "body": {
+          "history_kw": {
+            "type": "array<array<number|null>>",
+            "required": true,
+            "shape": "eligible historical days by intervals",
+            "rules": [
+              "Must be non-empty",
+              "Non-null values must be non-negative"
+            ]
+          },
+          "observed_kw": {
+            "type": "array<number|null>",
+            "required": true,
+            "rules": [
+              "Must have the same interval count as every history day",
+              "Non-null values must be non-negative"
+            ]
+          },
+          "event_start_index": {
+            "type": "integer",
+            "required": true,
+            "minimum": 0,
+            "inclusive": true
+          },
+          "event_end_index": {
+            "type": "integer",
+            "required": true,
+            "minimum": 1,
+            "exclusive": true
+          },
+          "committed_reduction_kw": {
+            "type": "number",
+            "required": false,
+            "minimum": 0,
+            "default": 0
+          },
+          "method": {
+            "type": "string",
+            "required": false,
+            "enum": [
+              "high_4_of_5",
+              "ten_in_ten"
+            ],
+            "default": "high_4_of_5"
+          },
+          "adjustment_intervals": {
+            "type": "integer",
+            "required": false,
+            "minimum": 0,
+            "maximum": 16,
+            "default": 4
+          }
+        },
+        "response_type": "VerificationResult",
+        "method_requirements": {
+          "high_4_of_5": "At least 4 complete eligible days; the latest 5 eligible days are considered and the highest 4 are selected.",
+          "ten_in_ten": "At least 10 complete eligible days."
+        }
+      },
+      {
+        "id": "list_runs",
+        "method": "GET",
+        "path": "/api/runs",
+        "params": {},
+        "response": {
+          "runs": "array<RunRecord>"
+        },
+        "caveat": "The live run list is memory-resident and bounded. PostgreSQL stores completed audit data but is not currently used to rehydrate evicted live runs."
+      },
+      {
+        "id": "create_run",
+        "method": "POST",
+        "path": "/api/runs",
+        "body": {
+          "scenario": {
+            "type": "string",
+            "required": false,
+            "enum_source": "GET /api/scenarios",
+            "default": "heatwave"
+          },
+          "seed": {
+            "type": "integer",
+            "required": false,
+            "default": 42
+          },
+          "ticks": {
+            "type": "integer",
+            "required": false,
+            "minimum": 1,
+            "maximum": 96,
+            "default": 96
+          },
+          "params": {
+            "type": "ScenarioParams",
+            "required": false,
+            "default": {}
+          },
+          "carry_debt": {
+            "type": "boolean",
+            "required": false,
+            "default": true,
+            "meaning": "Load prior fairness balances from PostgreSQL when configured."
+          }
+        },
+        "response": {
+          "run_id": "string",
+          "status": "string"
+        },
+        "frontend_behavior": "Treat the response as accepted work, not a completed result."
+      },
+      {
+        "id": "run_status",
+        "method": "GET",
+        "path": "/api/runs/{run_id}",
+        "path_params": {
+          "run_id": "string, required"
+        },
+        "response_type": "RunRecord",
+        "polling": {
+          "recommended_interval_ms": 500,
+          "stop_on": [
+            "ready",
+            "failed"
+          ]
+        }
+      },
+      {
+        "id": "run_summary",
+        "method": "GET",
+        "path": "/api/runs/{run_id}/summary",
+        "path_params": {
+          "run_id": "string, required"
+        },
+        "response_type": "RunSummary",
+        "behavior": "Returns ready=false before completion, and HTTP 500 when the run failed."
+      },
+      {
+        "id": "run_flexibility",
+        "method": "GET",
+        "path": "/api/runs/{run_id}/flexibility",
+        "path_params": {
+          "run_id": "string, required"
+        },
+        "response_type": "RunFlexibility",
+        "errors": {
+          "409": "Run is not ready"
+        }
+      },
+      {
+        "id": "inject_run",
+        "method": "POST",
+        "path": "/api/runs/{run_id}/inject",
+        "path_params": {
+          "run_id": "string, required"
+        },
+        "body": {
+          "type": {
+            "type": "string",
+            "required": true,
+            "enum": [
+              "heatwave",
+              "ev_surge",
+              "cloud_cover",
+              "dt_fault"
+            ]
+          },
+          "magnitude": {
+            "type": "number",
+            "required": false,
+            "minimum": 0,
+            "maximum": 3,
+            "default": 0.5
+          },
+          "from_tick": {
+            "type": "integer|null",
+            "required": false,
+            "minimum": 0,
+            "maximum": 95,
+            "additional_rule": "Must be less than the selected run's ticks."
+          },
+          "dt_id": {
+            "type": "string|null",
+            "required": false,
+            "behavior": "Required by the product UI for dt_fault; must match a transformer in the run."
+          }
+        },
+        "response": {
+          "run_id": "string",
+          "status": "pending",
+          "injections": "array<Injection>",
+          "resimulating_from_tick": "integer"
+        },
+        "errors": {
+          "409": "Run is not ready or changed concurrently",
+          "422": "Transformer or tick is invalid"
+        }
+      },
+      {
+        "id": "run_events",
+        "method": "GET",
+        "path": "/api/runs/{run_id}/events",
+        "path_params": {
+          "run_id": "string, required"
+        },
+        "query_params": {
+          "arm": {
+            "type": "string",
+            "default": "vidyut",
+            "valid_values": [
+              "baseline",
+              "vidyut"
+            ]
+          },
+          "tier": {
+            "type": "integer|null",
+            "default": null
+          },
+          "dt_id": {
+            "type": "string|null",
+            "default": null
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        },
+        "response": {
+          "run_id": "string",
+          "ready": "boolean",
+          "arm": "string when ready",
+          "total": "integer",
+          "offset": "integer when ready",
+          "limit": "integer when ready",
+          "events": "array<TickEvent>"
+        }
+      },
+      {
+        "id": "run_notifications",
+        "method": "GET",
+        "path": "/api/runs/{run_id}/notifications",
+        "path_params": {
+          "run_id": "string, required"
+        },
+        "response": {
+          "run_id": "string",
+          "ready": "boolean",
+          "count": "integer when ready",
+          "notifications": "array<Notification>"
+        }
+      },
+      {
+        "id": "dispatch_notifications",
+        "method": "POST",
+        "path": "/api/runs/{run_id}/notifications/dispatch",
+        "path_params": {
+          "run_id": "string, required"
+        },
+        "body": null,
+        "response": {
+          "run_id": "string",
+          "status": "not_configured | unreachable | delivered",
+          "configured": "boolean",
+          "attempted": "integer",
+          "delivered": "integer",
+          "error": "string|null"
+        },
+        "frontend_classification": "Operator action. Require confirmation in a production UI."
+      },
+      {
+        "id": "notification_delivery_callback",
+        "method": "POST",
+        "path": "/api/notifications/{notification_id}/delivery",
+        "path_params": {
+          "notification_id": "integer, required"
+        },
+        "body": {
+          "status": {
+            "type": "string",
+            "required": true,
+            "enum": [
+              "queued",
+              "dispatched",
+              "delivered",
+              "failed"
+            ]
+          },
+          "provider_message_id": {
+            "type": "string|null",
+            "required": false,
+            "maximum_length": 128
+          },
+          "error": {
+            "type": "string|null",
+            "required": false,
+            "maximum_length": 2000
+          }
+        },
+        "frontend_classification": "Integration callback. Do not call from the normal browser UI.",
+        "errors": {
+          "404": "Notification not found",
+          "409": "Invalid delivery-state transition",
+          "503": "Database unavailable"
+        }
+      },
+      {
+        "id": "run_report",
+        "method": "GET",
+        "path": "/api/runs/{run_id}/report",
+        "path_params": {
+          "run_id": "string, required"
+        },
+        "response_content_type": "application/pdf",
+        "browser_behavior": "Open in a new tab or download as a Blob.",
+        "errors": {
+          "409": "Run is not ready"
+        }
+      },
+      {
+        "id": "household_detail",
+        "method": "GET",
+        "path": "/api/households/{household_id}",
+        "path_params": {
+          "household_id": "string, required"
+        },
+        "query_params": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        "response_type": "HouseholdDetail",
+        "requires_database": true
+      },
+      {
+        "id": "fairness_leaderboard",
+        "method": "GET",
+        "path": "/api/fairness/leaderboard",
+        "query_params": {
+          "dt_id": {
+            "type": "string|null",
+            "default": null
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 25
+          }
+        },
+        "response": {
+          "dt_id": "string|null",
+          "households": "array<FairnessRow>"
+        },
+        "requires_database": true
+      },
+      {
+        "id": "models",
+        "method": "GET",
+        "path": "/api/models",
+        "params": {},
+        "response_type": "ModelRegistry",
+        "frontend_rule": "Observability is not an ML model and appears separately from models. Forecast evaluation readiness and runtime readiness are separate fields."
+      }
+    ]
+  },
+  "websocket": {
+    "path": "/ws/runs/{run_id}",
+    "url_example": "ws://localhost:8000/ws/runs/abc123?speed=4&from_tick=0",
+    "path_params": {
+      "run_id": "string, required"
+    },
+    "query_params": {
+      "speed": {
+        "type": "number",
+        "minimum": 0.1,
+        "maximum": 200,
+        "default": 4,
+        "unit": "ticks per second"
+      },
+      "from_tick": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": "run.ticks",
+        "default": 0
+      }
+    },
+    "server_message_order": [
+      "status",
+      "ready",
+      "tick repeated from from_tick to ticks - 1",
+      "complete"
+    ],
+    "message_types": {
+      "status": {
+        "type": "status",
+        "status": "pending | running | ready | failed"
+      },
+      "ready": {
+        "type": "ready",
+        "run_id": "string",
+        "scenario": "string",
+        "seed": "integer",
+        "ticks": "integer",
+        "injections": "array<Injection>"
+      },
+      "tick": {
+        "type": "tick",
+        "t": "integer",
+        "clock": "HH:MM",
+        "arms": {
+          "baseline": "ArmSnapshot",
+          "vidyut": "ArmSnapshot"
+        },
+        "forecast": "ForecastSnapshot|null"
+      },
+      "complete": {
+        "type": "complete",
+        "arms": {
+          "baseline": "RunTotals",
+          "vidyut": "RunTotals"
+        },
+        "deltas": "RunTotals numeric field differences, calculated as vidyut minus baseline"
+      },
+      "error": {
+        "type": "error",
+        "detail": "string"
+      }
+    },
+    "client_behavior": [
+      "Do not assume the run is ready when the socket opens.",
+      "Render status and ready messages before tick playback.",
+      "Close and reconnect after an injection because the run generation changes.",
+      "Treat an error message as terminal for that socket.",
+      "Use from_tick to resume visual playback, not to resume simulation computation."
+    ]
+  },
+  "types": {
+    "ScenarioParams": {
+      "ami_penetration": "number|null, 0..1",
+      "connected_device_penetration": "number|null, 0..1",
+      "ev_penetration": "number|null, 0..1",
+      "critical_share": "number|null, 0..0.2",
+      "essential_share": "number|null, 0..0.6",
+      "peak_multiplier": "number|null, 1..2.5",
+      "tariff_rs_per_kwh": "number|null, greater than 0 and at most 50"
+    },
+    "Injection": {
+      "type": "heatwave | ev_surge | cloud_cover | dt_fault",
+      "magnitude": "number",
+      "from_tick": "integer",
+      "dt_id": "string|null"
+    },
+    "RunRecord": {
+      "run_id": "string",
+      "scenario": "string",
+      "seed": "integer",
+      "ticks": "integer",
+      "params": "Record<string, number>",
+      "status": "pending | running | ready | failed",
+      "error": "string|null",
+      "carry_debt": "boolean",
+      "opening_debt_households": "integer",
+      "persisted": "boolean",
+      "persistence_error": "string|null",
+      "generation": "integer",
+      "injections": "array<Injection>",
+      "created_at": "ISO-8601 string"
+    },
+    "RunTotals": {
+      "arm": "baseline | vidyut",
+      "peak_kva": "number",
+      "max_trafo_loading_pct": "number",
+      "total_losses_kwh": "number",
+      "mean_spread_pct": "number",
+      "max_spread_pct": "number",
+      "homes_dark_minutes": "number",
+      "peak_homes_dark": "integer",
+      "critical_uptime_pct": "number",
+      "unserved_kwh": "number",
+      "demanded_kwh": "number",
+      "flexibility_kwh": "number",
+      "energy_balance_error_kwh": "number",
+      "unserved_cost_rs": "number",
+      "served_kwh": "number",
+      "losses_pct_of_delivered": "number",
+      "gini": "number",
+      "gini_affected": "number",
+      "max_household_burden_min": "number",
+      "households_curtailed": "integer",
+      "nonconverged_ticks": "integer",
+      "addressable_share_of_load": "number, fraction 0..1",
+      "minutes_by_level": "Record<string, number>",
+      "events_by_tier": "Record<string, integer>",
+      "spread_series": "array<number>"
+    },
+    "RunSummary": {
+      "base": "All RunRecord fields",
+      "ready": "boolean",
+      "arms": {
+        "baseline": "RunTotals",
+        "vidyut": "RunTotals"
+      },
+      "deltas": "Numeric fields calculated as vidyut minus baseline"
+    },
+    "RunFlexibility": {
+      "run_id": "string",
+      "registered": {
+        "capacity_kw": "number",
+        "households": "integer",
+        "devices": "integer",
+        "capacity_by_kind_kw": "Record<device kind, number>",
+        "source": "registered",
+        "method": "controllable_device_nameplate"
+      },
+      "available": {
+        "profile_kw": "array<number>, one value per run tick",
+        "peak_kw": "number",
+        "energy_kwh": "number",
+        "source": "registered_schedule",
+        "method": "active_controllable_load"
+      },
+      "realised": {
+        "reduction_kwh": "number",
+        "source": "simulation_measurement",
+        "method": "natural_minus_controlled_load"
+      }
+    },
+    "OpportunityEstimate": {
+      "ready": "boolean",
+      "reasons": "array<string>",
+      "estimated_profile_kw": "array<number>, latest input day",
+      "actionable_profile_kw": "array<number>|null",
+      "estimated_average_kw": "number",
+      "estimated_peak_kw": "number",
+      "estimated_aggregate_share": "number, fraction 0..1",
+      "actionable_average_kw": "number|null",
+      "actionable_peak_kw": "number|null",
+      "registered_capacity_kw": "number|null",
+      "confidence": "unavailable | low | medium | high",
+      "coverage_pct": "number",
+      "temperature_span_c": "number",
+      "fit_score": "number",
+      "source": "estimated",
+      "method": "interval_baseline_temperature_association_v1"
+    },
+    "VerificationResult": {
+      "ready": "boolean",
+      "method": "high_4_of_5 | ten_in_ten",
+      "selected_days": "array<integer>, zero-based indexes into history_kw",
+      "baseline_profile_kw": "array<number>, event intervals only",
+      "observed_profile_kw": "array<number>, event intervals only",
+      "baseline_average_kw": "number",
+      "observed_average_kw": "number",
+      "gross_difference_kw": "number, may be negative",
+      "realised_reduction_kw": "number, floored at zero",
+      "realised_reduction_kwh": "number, floored at zero",
+      "committed_reduction_kw": "number",
+      "performance_pct": "number|null, may exceed 100",
+      "same_day_adjustment_kw": "number",
+      "coverage_pct": "number",
+      "confidence": "medium | high",
+      "source": "verified"
+    },
+    "TickEvent": {
+      "t": "integer, added by the events endpoint",
+      "tier": "integer",
+      "action": "string",
+      "target": "string",
+      "kw": "number",
+      "households": "integer",
+      "reason_code": "string",
+      "detail": "string",
+      "forecast_kw": "number|null",
+      "safe_limit_kw": "number|null"
+    },
+    "ArmSnapshot": {
+      "feeders": "array<{id:string, loading_pct:number, losses_kw:number}>",
+      "dts": "array<{id:string, loading_pct:number, energized:boolean, households_dark:integer}>",
+      "topology": "{tie_switches: array<{id:string, closed:boolean}>}",
+      "metrics": "ArmMetrics",
+      "events": "array<TickEvent without t>"
+    },
+    "ArmMetrics": {
+      "converged": "boolean",
+      "peak_kva": "number",
+      "spread_pct": "number",
+      "losses_kw": "number",
+      "homes_dark": "integer",
+      "critical_uptime_pct": "number",
+      "unserved_kwh": "number",
+      "gini": "number",
+      "max_trafo_loading_pct": "number"
+    },
+    "ForecastSnapshot": {
+      "model": "string",
+      "runtime_ready": "boolean",
+      "dt_id": "string",
+      "horizon_kw": "array<number>",
+      "safe_limit_kw": "number",
+      "rating_kw": "number"
+    },
+    "Notification": {
+      "tick": "integer",
+      "clock": "HH:MM",
+      "channel": "string",
+      "event_type": "string",
+      "dt_id": "string",
+      "feeder_id": "string",
+      "households": "integer",
+      "reason_code": "string",
+      "message": "string",
+      "tariff_multiplier": "number|null",
+      "expected_reduction_kw": "number|null",
+      "window_minutes": "integer|null"
+    },
+    "HealthResponse": {
+      "status": "ok",
+      "scenarios": "array<string>",
+      "database": {
+        "configured": "boolean",
+        "reachable": "boolean",
+        "error": "string|null"
+      }
+    },
+    "ObservabilityStatus": {
+      "ready": "boolean",
+      "component": "flexibility_assurance",
+      "runtime": "numpy",
+      "methods": "object",
+      "boundaries": "array<string>"
+    },
+    "HouseholdDetail": {
+      "household_id": "string",
+      "dt_id": "string",
+      "tier": "critical | essential | standard",
+      "addressability": "{ami:boolean, meter_load_limit_supported:boolean, has_connected_device:boolean, addressable:boolean}",
+      "devices": "array<{kind:string, rated_kw:number, controllable:boolean}>",
+      "ledger": "{cumulative_debt_min:number, minutes_by_level:object, first_curtailed_at:string|null, last_curtailed_at:string|null, standing_percentile_on_dt:number|null, dt_peer_count:integer, dt_average_debt_min:number}",
+      "history": "{total:integer, offset:integer, limit:integer, events:array<HouseholdHistoryEvent>}"
+    },
+    "HouseholdHistoryEvent": {
+      "run_id": "string",
+      "scenario": "string",
+      "arm": "string",
+      "tick": "integer",
+      "clock": "HH:MM",
+      "level": "string",
+      "minutes": "number",
+      "kw_reduction": "number",
+      "debt_weight": "number",
+      "debt_charged": "number",
+      "standing_percentile_at_decision": "number|null",
+      "reason_code": "string",
+      "detail": "string|null",
+      "forecast_kw": "number|null",
+      "safe_limit_kw": "number|null",
+      "explanation": "string"
+    },
+    "FairnessRow": {
+      "household_id": "string",
+      "dt_id": "string",
+      "cumulative_debt_min": "number",
+      "minutes_by_level": "Record<string, number>",
+      "last_curtailed_at": "ISO-8601 string|null"
+    },
+    "ModelRegistry": {
+      "model_dir": "string",
+      "any_trained": "boolean",
+      "models": "Record<string, model artifact status and evaluation payload>",
+      "observability": "ObservabilityStatus"
+    }
+  },
+  "display_rules": {
+    "units": {
+      "power": "kW",
+      "apparent_power": "kVA",
+      "energy": "kWh",
+      "loading": "%",
+      "uptime": "%",
+      "time": "minutes",
+      "temperature": "C",
+      "currency": "INR"
+    },
+    "delta_formula": "vidyut minus baseline",
+    "delta_color_rules": {
+      "lower_is_better": [
+        "unserved_kwh",
+        "homes_dark_minutes",
+        "peak_homes_dark",
+        "max_trafo_loading_pct",
+        "total_losses_kwh",
+        "gini_affected",
+        "max_household_burden_min",
+        "nonconverged_ticks"
+      ],
+      "higher_is_better": [
+        "critical_uptime_pct",
+        "served_kwh"
+      ],
+      "context_required": [
+        "flexibility_kwh",
+        "addressable_share_of_load",
+        "gini",
+        "demanded_kwh"
+      ]
+    },
+    "empty_states": [
+      "Before a run: explain which action populates the panel.",
+      "Run pending or running: show status; do not display zero as a final result.",
+      "Estimate ready=false: display reasons and hide actionable values.",
+      "No events: say no controller action occurred in the selected window.",
+      "Database unavailable: disable household and fairness history while leaving simulation available."
+    ]
+  },
+  "production_frontend_requirements": [
+    "Use generated TypeScript types from the live OpenAPI document where possible.",
+    "Add authentication and role-based authorization before exposing operator actions.",
+    "Keep notification dispatch behind an explicit confirmation step.",
+    "Never call the notification delivery callback from normal browser UI code.",
+    "Reconnect the run WebSocket after resimulation or injection.",
+    "Show method, source, confidence and coverage beside estimated or verified values.",
+    "Do not relabel weather-sensitive opportunity as AC or appliance detection.",
+    "Do not imply that simulation measurements are live field telemetry.",
+    "Support keyboard navigation, reduced motion, responsive layouts and non-color status cues.",
+    "Provide loading, empty, partial-data, validation, offline and failed-run states.",
+    "Keep API base URL configurable and do not embed secrets in NEXT_PUBLIC variables."
+  ],
+  "handoff_checklist": [
+    "Open GET /openapi.json and compare it with this file before starting a production sprint.",
+    "Confirm production authentication and user roles.",
+    "Confirm whether completed runs must be rehydrated from PostgreSQL after API restart.",
+    "Confirm the live AMI and weather ingestion contract before building data-upload screens.",
+    "Confirm operator permissions for injections and notification dispatch.",
+    "Confirm whether the first production release uses polling, WebSocket playback or both.",
+    "Confirm timezone and locale requirements for stored timestamps and tick clock labels."
+  ]
+}

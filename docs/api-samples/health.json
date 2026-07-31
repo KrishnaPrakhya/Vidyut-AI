@@ -1,0 +1,15 @@
+{
+  "status": "ok",
+  "scenarios": [
+    "ev_surge",
+    "heatwave",
+    "... 3 items total"
+  ],
+  "database": {
+    "status": "not_configured",
+    "configured": false,
+    "reachable": false,
+    "host": null,
+    "error": null
+  }
+}

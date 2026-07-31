@@ -1,0 +1,225 @@
+{
+  "base_url": "http://localhost:8000",
+  "examples": {
+    "create_run": {
+      "request": {
+        "method": "POST",
+        "path": "/api/runs",
+        "body": {
+          "scenario": "heatwave",
+          "seed": 42,
+          "ticks": 12,
+          "params": {
+            "ami_penetration": 0.75,
+            "connected_device_penetration": 0.35,
+            "ev_penetration": 0.18,
+            "critical_share": 0.05,
+            "essential_share": 0.25,
+            "peak_multiplier": 1.6,
+            "tariff_rs_per_kwh": 8.5
+          },
+          "carry_debt": false
+        }
+      },
+      "response": {
+        "run_id": "abc123def456",
+        "status": "pending"
+      }
+    },
+    "poll_run": {
+      "request": {
+        "method": "GET",
+        "path": "/api/runs/abc123def456"
+      },
+      "response": {
+        "run_id": "abc123def456",
+        "scenario": "heatwave",
+        "seed": 42,
+        "ticks": 12,
+        "params": {},
+        "status": "ready",
+        "error": null,
+        "carry_debt": false,
+        "opening_debt_households": 0,
+        "persisted": true,
+        "persistence_error": null,
+        "generation": 0,
+        "injections": [],
+        "created_at": "2026-07-31T10:30:00+00:00"
+      }
+    },
+    "inject_heatwave": {
+      "request": {
+        "method": "POST",
+        "path": "/api/runs/abc123def456/inject",
+        "body": {
+          "type": "heatwave",
+          "magnitude": 0.6,
+          "from_tick": 4,
+          "dt_id": null
+        }
+      },
+      "response": {
+        "run_id": "abc123def456",
+        "status": "pending",
+        "injections": [
+          {
+            "type": "heatwave",
+            "magnitude": 0.6,
+            "from_tick": 4,
+            "dt_id": null
+          }
+        ],
+        "resimulating_from_tick": 4
+      }
+    },
+    "inject_transformer_fault": {
+      "request": {
+        "method": "POST",
+        "path": "/api/runs/abc123def456/inject",
+        "body": {
+          "type": "dt_fault",
+          "magnitude": 1,
+          "from_tick": 6,
+          "dt_id": "F1-DT03"
+        }
+      }
+    },
+    "estimate_weather_opportunity": {
+      "request": {
+        "method": "POST",
+        "path": "/api/observability/flexibility/estimate",
+        "body": {
+          "aggregate_kw": [
+            [8, 8, 9, 11, 15, 17, 13, 9],
+            [8, 8, 10, 13, 17, 19, 15, 10],
+            [8, 9, 11, 15, 19, 21, 17, 11],
+            [9, 10, 13, 17, 21, 23, 19, 13],
+            [10, 11, 15, 19, 23, 25, 21, 15],
+            [11, 13, 17, 21, 25, 27, 23, 17],
+            [13, 15, 19, 23, 27, 29, 25, 19]
+          ],
+          "ambient_c": [
+            [21, 22, 24, 27, 30, 32, 28, 24],
+            [22, 23, 25, 28, 31, 33, 29, 25],
+            [23, 24, 26, 29, 32, 34, 30, 26],
+            [24, 25, 27, 30, 33, 35, 31, 27],
+            [25, 26, 28, 31, 34, 36, 32, 28],
+            [26, 27, 29, 32, 35, 37, 33, 29],
+            [27, 28, 30, 33, 36, 38, 34, 30]
+          ],
+          "registered_capacity_kw": 5,
+          "setpoint_c": 24
+        }
+      },
+      "response_shape": {
+        "ready": true,
+        "reasons": [],
+        "estimated_profile_kw": "array<number>",
+        "actionable_profile_kw": "array<number>",
+        "estimated_average_kw": "number",
+        "estimated_peak_kw": "number",
+        "estimated_aggregate_share": "number",
+        "actionable_average_kw": "number",
+        "actionable_peak_kw": "number",
+        "registered_capacity_kw": 5,
+        "confidence": "low | medium | high",
+        "coverage_pct": 100,
+        "temperature_span_c": 17,
+        "fit_score": "number",
+        "source": "estimated",
+        "method": "interval_baseline_temperature_association_v1"
+      }
+    },
+    "verify_event": {
+      "request": {
+        "method": "POST",
+        "path": "/api/observability/events/verify",
+        "body": {
+          "history_kw": [
+            [100, 100, 100, 100, 100, 100, 100, 100],
+            [110, 110, 110, 110, 110, 110, 110, 110],
+            [120, 120, 120, 120, 120, 120, 120, 120],
+            [130, 130, 130, 130, 130, 130, 130, 130],
+            [140, 140, 140, 140, 140, 140, 140, 140]
+          ],
+          "observed_kw": [125, 125, 125, 125, 105, 105, 125, 125],
+          "event_start_index": 4,
+          "event_end_index": 6,
+          "committed_reduction_kw": 20,
+          "method": "high_4_of_5",
+          "adjustment_intervals": 4
+        }
+      },
+      "response": {
+        "ready": true,
+        "method": "high_4_of_5",
+        "selected_days": [1, 2, 3, 4],
+        "baseline_profile_kw": [125, 125],
+        "observed_profile_kw": [105, 105],
+        "baseline_average_kw": 125,
+        "observed_average_kw": 105,
+        "gross_difference_kw": 20,
+        "realised_reduction_kw": 20,
+        "realised_reduction_kwh": 10,
+        "committed_reduction_kw": 20,
+        "performance_pct": 100,
+        "same_day_adjustment_kw": 0,
+        "coverage_pct": 100,
+        "confidence": "high",
+        "source": "verified"
+      }
+    },
+    "event_query": {
+      "request": {
+        "method": "GET",
+        "path": "/api/runs/abc123def456/events?arm=vidyut&tier=2&dt_id=F1-DT03&offset=0&limit=100"
+      }
+    },
+    "delivery_receipt": {
+      "request": {
+        "method": "POST",
+        "path": "/api/notifications/123/delivery",
+        "body": {
+          "status": "delivered",
+          "provider_message_id": "provider-message-789",
+          "error": null
+        }
+      },
+      "warning": "Provider integration callback, not a normal browser UI action."
+    },
+    "websocket": {
+      "connection": "ws://localhost:8000/ws/runs/abc123def456?speed=4&from_tick=0",
+      "status_message": {
+        "type": "status",
+        "status": "running"
+      },
+      "ready_message": {
+        "type": "ready",
+        "run_id": "abc123def456",
+        "scenario": "heatwave",
+        "seed": 42,
+        "ticks": 12,
+        "injections": []
+      },
+      "tick_message_shape": {
+        "type": "tick",
+        "t": 0,
+        "clock": "00:00",
+        "arms": {
+          "baseline": "ArmSnapshot",
+          "vidyut": "ArmSnapshot"
+        },
+        "forecast": "ForecastSnapshot|null"
+      },
+      "complete_message_shape": {
+        "type": "complete",
+        "arms": {
+          "baseline": "RunTotals",
+          "vidyut": "RunTotals"
+        },
+        "deltas": "Record<string, number>"
+      }
+    }
+  }
+}

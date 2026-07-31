@@ -1,0 +1,260 @@
+{
+  "model_dir": "D:\\vidyuth\\backend\\ml\\models",
+  "any_trained": true,
+  "models": {
+    "forecast": {
+      "trained": true,
+      "runtime_ready": false,
+      "evaluation_only": true,
+      "runtime_message": "evaluation is available; the live controller uses damped_trend until a deployable predictor is exported",
+      "artifact": "forecast_eval.json",
+      "holdout": "indian_meters_final_day",
+      "models": {
+        "seasonal_naive": {
+          "MASE": 1.0635,
+          "MAPE": 60.5636
+        },
+        "chronos_zeroshot": {
+          "MASE": 0.8748,
+          "MAPE": 45.7893
+        },
+        "chronos_finetuned": {
+          "MASE": 0.8579,
+          "MAPE": 43.2293
+        }
+      },
+      "cold_start": {
+        "history_days": 14,
+        "lgbm_from_scratch": {
+          "MASE": 0.9322
+        },
+        "chronos_finetuned": {
+          "MASE": 0.8238
+        }
+      },
+      "trained_at": "2026-07-31T05:28:46+00:00",
+      "n_series": 192,
+      "n_obs": 1285204,
+      "by_horizon": {
+        "seasonal_naive": {
+          "next_15min": {
+            "MASE": 0.6823,
+            "MAPE": 32.2873,
+            "MAE_kw": 0.228,
+            "series": 192,
+            "points_excluded_from_mape": 32
+          },
+          "next_hour": {
+            "MASE": 0.6958,
+            "MAPE": 34.1162,
+            "MAE_kw": 0.2122,
+            "series": 192,
+            "points_excluded_from_mape": 145
+          },
+          "day_ahead": {
+            "MASE": 1.0635,
+            "MAPE": 60.5636,
+            "MAE_kw": 0.3153,
+            "series": 192,
+            "points_excluded_from_mape": 4173
+          }
+        },
+        "chronos_zeroshot": {
+          "next_15min": {
+            "MASE": 0.2928,
+            "MAPE": 17.6046,
+            "MAE_kw": 0.0934,
+            "series": 192,
+            "points_excluded_from_mape": 32
+          },
+          "next_hour": {
+            "MASE": 0.3885,
+            "MAPE": 21.028,
+            "MAE_kw": 0.1228,
+            "series": 192,
+            "points_excluded_from_mape": 145
+          },
+          "day_ahead": {
+            "MASE": 0.8748,
+            "MAPE": 45.7893,
+            "MAE_kw": 0.2572,
+            "series": 192,
+            "points_excluded_from_mape": 4173
+          }
+        },
+        "chronos_finetuned": {
+          "next_15min": {
+            "MASE": 0.2933,
+            "MAPE": 18.1182,
+            "MAE_kw": 0.0969,
+            "series": 192,
+            "points_excluded_from_mape": 32
+          },
+          "next_hour": {
+            "MASE": 0.3779,
+            "MAPE": 20.9585,
+            "MAE_kw": 0.1203,
+            "series": 192,
+            "points_excluded_from_mape": 145
+          },
+          "day_ahead": {
+            "MASE": 0.8579,
+            "MAPE": 43.2293,
+            "MAE_kw": 0.254,
+            "series": 192,
+            "points_excluded_from_mape": 4173
+          }
+        }
+      },
+      "by_scale": {
+        "seasonal_naive": {
+          "transformer_scale": {
+            "MASE": 1.1351,
+            "MAPE": 51.8559,
+            "MAE_kw": 2.3471,
+            "series": 5,
+            "points_excluded_from_mape": 0
+          },
+          "cluster_scale": {
+            "MASE": 0.9377,
+            "MAPE": 49.7149,
+            "MAE_kw": 0.9851,
+            "series": 18,
+            "points_excluded_from_mape": 47
+          },
+          "individual_home": {
+            "MASE": 1.0748,
+            "MAPE": 62.4165,
+            "MAE_kw": 0.1839,
+            "series": 169,
+            "points_excluded_from_mape": 4126
+          }
+        },
+        "chronos_zeroshot": {
+          "transformer_scale": {
+            "MASE": 0.9215,
+            "MAPE": 42.6883,
+            "MAE_kw": 1.9024,
+            "series": 5,
+            "points_excluded_from_mape": 0
+          },
+          "cluster_scale": {
+            "MASE": 0.7533,
+            "MAPE": 38.9717,
+            "MAE_kw": 0.7833,
+            "series": 18,
+            "points_excluded_from_mape": 47
+          },
+          "individual_home": {
+            "MASE": 0.8864,
+            "MAPE": 46.8596,
+            "MAE_kw": 0.1525,
+            "series": 169,
+            "points_excluded_from_mape": 4126
+          }
+        },
+        "chronos_finetuned": {
+          "transformer_scale": {
+            "MASE": 0.9136,
+            "MAPE": 42.6696,
+            "MAE_kw": 1.8968,
+            "series": 5,
+            "points_excluded_from_mape": 0
+          },
+          "cluster_scale": {
+            "MASE": 0.7551,
+            "MAPE": 38.6905,
+            "MAE_kw": 0.7849,
+            "series": 18,
+            "points_excluded_from_mape": 47
+          },
+          "individual_home": {
+            "MASE": 0.8673,
+            "MAPE": 43.8822,
+            "MAE_kw": 0.1488,
+            "series": 169,
+            "points_excluded_from_mape": 4126
+          }
+        }
+      },
+      "data": {
+        "country": "India",
+        "real_measurements": true,
+        "synthetic_training_data": false,
+        "sources": [
+          "CEEW high-frequency smart meter data, Mathura and Bareilly, Uttar Pradesh, 3-minute native"
+        ],
+        "series_counts": {
+          "CEEW_transformer": 5,
+          "CEEW_cluster": 18,
+          "CEEW_home": 169,
+          "IBLEND": 0,
+          "IAWE": 0
+        },
+        "households_per_aggregate_group": 25,
+        "households_per_transformer_target": 70,
+        "aggregate_group_note": "the simulated network serves 70 homes per transformer; no cohort of real meters had that many recording together for long enough, so groups of 25 were used",
+        "cohorts": [
+          {
+            "meters": 53,
+            "from": "2020-01-03 00:00:00",
+            "to": "2020-12-31 23:45:00"
+          },
+          {
+            "meters": 63,
+            "from": "2019-07-10 00:00:00",
+            "to": "2019-12-31 23:45:00"
+          },
+          {
+            "meters": 26,
+            "from": "2021-01-01 00:00:00",
+            "to": "2021-10-27 23:45:00"
+          },
+          "... 7 items total"
+        ],
+        "resampling": "downsampled to 15 minutes by averaging; nothing upsampled or interpolated",
+        "aggregation": "households pooled into disjoint groups to reconstruct transformer-scale load; no household contributes to more than one group at a given scale",
+        "aggregate_estimation": {
+          "minimum_members_reporting": 0.7,
+          "mean_scaling_factor": 1.0946,
+          "method": "where some meters in a group were not reporting, the partial sum was scaled by the fraction present, the standard treatment for missing AMI reads; individual readings were never fabricated"
+        },
+        "cleaning": [
+          "cumulative meter registers detected and differenced automatically",
+          "negative and non-finite readings dropped",
+          "gaps bridged up to 4 intervals, longer outages left missing",
+          "... 4 items total"
+        ]
+      },
+      "config": {
+        "base_model": "chronos-bolt-small",
+        "prediction_length": 96,
+        "freq": "15min",
+        "seasonal_period": 96,
+        "fine_tune_lr": 1e-05,
+        "fine_tune_steps": 2000,
+        "seed": 42,
+        "fit_minutes": 8.24,
+        "mase_definition": "MAE divided by in-sample seasonal-naive MAE at period 96"
+      }
+    }
+  },
+  "observability": {
+    "ready": true,
+    "component": "flexibility_assurance",
+    "runtime": "numpy",
+    "methods": {
+      "registered": "controllable_device_nameplate",
+      "estimated": "interval_baseline_temperature_association_v1",
+      "verified": [
+        "high_4_of_5",
+        "ten_in_ten"
+      ]
+    },
+    "boundaries": [
+      "does not identify individual appliances from aggregate meter data",
+      "estimated opportunity is capped by registered capacity when provided",
+      "issues no control commands"
+    ]
+  }
+}
