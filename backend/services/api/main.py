@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 import os
+from pathlib import Path
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from services.api.models_registry import read_artifacts
 from services.api.report import build_report_pdf
@@ -48,6 +51,7 @@ from services.sim.scenario import available_scenarios
 from services.timebase import TICK_HOURS
 
 DEFAULT_PLAYBACK_TICKS_PER_SECOND = 4.0
+RECORDED_DIR = Path(__file__).resolve().parents[2] / "data" / "recorded"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -83,6 +87,42 @@ def health() -> dict:
 @app.get("/api/scenarios")
 def scenarios() -> dict:
     return {"scenarios": available_scenarios()}
+
+
+@app.get("/api/recordings")
+def recordings() -> dict:
+    rows = []
+    for path in sorted(RECORDED_DIR.glob("*.json")):
+        try:
+            with path.open(encoding="utf-8") as handle:
+                payload = json.load(handle)
+            meta = payload["meta"]
+            rows.append(
+                {
+                    "scenario": meta["scenario"],
+                    "seed": meta["seed"],
+                    "ticks": meta["ticks"],
+                    "schema_version": meta["schema_version"],
+                    "path": f"/api/recordings/{meta['scenario']}?seed={meta['seed']}",
+                }
+            )
+        except (OSError, KeyError, TypeError, json.JSONDecodeError):
+            continue
+    return {"recordings": rows}
+
+
+@app.get("/api/recordings/{scenario}")
+def recording(scenario: str, seed: int = Query(default=42)) -> FileResponse:
+    if scenario not in available_scenarios():
+        raise HTTPException(status_code=404, detail="unknown scenario")
+    path = RECORDED_DIR / f"{scenario}-{seed}.json"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="recording not found")
+    return FileResponse(
+        path,
+        media_type="application/json",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 @app.get("/api/observability/status")

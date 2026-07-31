@@ -45,6 +45,25 @@ def test_health_lists_scenarios(client: TestClient) -> None:
     assert {"normal", "heatwave", "ev_surge"} <= set(body["scenarios"])
 
 
+def test_recorded_replays_are_discoverable_and_readable(client: TestClient) -> None:
+    catalog = client.get("/api/recordings")
+    assert catalog.status_code == 200
+    rows = catalog.json()["recordings"]
+    assert {"normal", "heatwave", "ev_surge"} <= {
+        row["scenario"] for row in rows
+    }
+
+    replay = client.get("/api/recordings/heatwave?seed=42")
+    assert replay.status_code == 200
+    assert replay.json()["meta"]["ticks"] == 96
+    assert len(replay.json()["ticks"]) == 96
+
+
+def test_unknown_recording_is_rejected(client: TestClient) -> None:
+    assert client.get("/api/recordings/monsoon?seed=42").status_code == 404
+    assert client.get("/api/recordings/heatwave?seed=999").status_code == 404
+
+
 def test_unknown_scenario_is_rejected(client: TestClient) -> None:
     response = client.post("/api/runs", json={"scenario": "monsoon", "seed": 1})
     assert response.status_code == 404
