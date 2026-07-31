@@ -176,6 +176,35 @@
         "path": "/api/runs/abc123def456/events?arm=vidyut&tier=2&dt_id=F1-DT03&offset=0&limit=100"
       }
     },
+    "recording_catalog": {
+      "request": {
+        "method": "GET",
+        "path": "/api/recordings"
+      },
+      "response": {
+        "recordings": [
+          {
+            "scenario": "heatwave",
+            "seed": 42,
+            "ticks": 96,
+            "schema_version": 2,
+            "path": "/api/recordings/heatwave?seed=42"
+          }
+        ]
+      }
+    },
+    "recorded_replay": {
+      "request": {
+        "method": "GET",
+        "path": "/api/recordings/heatwave?seed=42"
+      },
+      "response_shape": {
+        "meta": "Recording metadata and simulated provenance",
+        "ticks": "96 synchronized baseline and Vidyut TickFrame objects",
+        "summary": "Final RunTotals for both arms and deltas",
+        "notifications": "Recorded notification objects"
+      }
+    },
     "delivery_receipt": {
       "request": {
         "method": "POST",

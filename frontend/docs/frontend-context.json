@@ -7,13 +7,13 @@
     "source_of_truth": {
       "openapi": "http://localhost:8000/openapi.json",
       "backend_routes": "backend/services/api/main.py",
-      "frontend_prototype": "frontend/app/page.tsx"
+      "frontend_application": "frontend/app/page.tsx"
     }
   },
   "project": {
     "name": "Vidyut",
     "summary": "Electrical distribution network simulation, load balancing, fairness accounting, registered flexibility observation and demand-response verification.",
-    "prototype_goal": "Explain and validate the backend before designing the production operator interface.",
+    "frontend_goal": "Explain the grid problem cinematically, support deterministic replay, run new simulations and preserve evidence provenance throughout the interface.",
     "current_scope": [
       "Run deterministic baseline and Vidyut simulations",
       "Compare network, reliability and fairness outcomes",
@@ -130,6 +130,15 @@
       "ui_outcome": "Show service, database, available scenario, forecast artifact and observability readiness separately."
     },
     {
+      "id": "recorded_replay",
+      "steps": [
+        "GET /api/recordings",
+        "GET /api/recordings/{scenario}?seed=42",
+        "Store the response in browser memory and drive every panel from ticks[currentIndex]"
+      ],
+      "ui_outcome": "Start the deterministic demonstration immediately and allow smooth local timeline scrubbing without recomputation."
+    },
+    {
       "id": "create_and_watch_run",
       "steps": [
         "POST /api/runs",
@@ -203,6 +212,31 @@
           ]
         },
         "screen_usage": "Populate scenario selector; do not hardcode if this endpoint is available."
+      },
+      {
+        "id": "recording_catalog",
+        "method": "GET",
+        "path": "/api/recordings",
+        "params": {},
+        "response_shape": {
+          "recordings": "array<{scenario, seed, ticks, schema_version, path}>"
+        },
+        "screen_usage": "Discover deterministic demonstration recordings without downloading their tick payloads."
+      },
+      {
+        "id": "recorded_replay",
+        "method": "GET",
+        "path": "/api/recordings/{scenario}",
+        "params": {
+          "seed": "integer, optional, defaults to 42"
+        },
+        "response_shape": {
+          "meta": "{schema_version, scenario, seed, ticks, arms, simulated}",
+          "ticks": "array<TickFrame>",
+          "summary": "{arms: {baseline: RunTotals, vidyut: RunTotals}, deltas}",
+          "notifications": "array<Notification>"
+        },
+        "screen_usage": "Cinematic story and zero-latency interactive replay. Load once and scrub locally."
       },
       {
         "id": "observability_status",
