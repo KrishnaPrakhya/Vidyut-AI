@@ -54,8 +54,10 @@ def simulate_arm(
     ticks: int = N_TICKS,
     params: dict[str, float] | None = None,
     injections: list[Injection] | None = None,
+    opening_debt: dict[str, float] | None = None,
 ) -> ArmResult:
-    world = build_world(arm, scenario, seed, params)
+    world = build_world(arm, scenario, seed, params, opening_debt)
+    world.simulation_ticks = ticks
     if injections:
         apply_injections(world, injections)
 
@@ -63,6 +65,10 @@ def simulate_arm(
     snapshots: list[ArmSnapshot] = []
 
     for tick in range(ticks):
+        pre_events = []
+        before_tick = getattr(controller, "before_tick", None)
+        if callable(before_tick):
+            pre_events = before_tick(world, tick)
         apply_scheduled_faults(world, tick)
         _, dt_kw, _ = apply_loads(world, tick)
         result = solve_power_flow(world)
@@ -72,7 +78,9 @@ def simulate_arm(
         if hasattr(controller, "forecaster"):
             controller.forecaster.observe(tick, dt_kw)
 
-        events = controller.act(world, tick, result)
+        events = pre_events + controller.act(world, tick, result)
+        if any(event.action == "reconfigure" for event in events):
+            result = solve_power_flow(world)
         snapshot = tick_snapshot(world, tick, result, dt_kw, events)
         snapshot.forecast = getattr(controller, "last_forecast", None)
         snapshots.append(snapshot)
@@ -92,12 +100,14 @@ def simulate(
     ticks: int = N_TICKS,
     params: dict[str, float] | None = None,
     injections: list[Injection] | None = None,
+    opening_debt: dict[str, float] | None = None,
 ) -> RunResult:
     return RunResult(
         scenario=scenario,
         seed=seed,
         arms={
-            arm: simulate_arm(arm, scenario, seed, ticks, params, injections) for arm in ARMS
+            arm: simulate_arm(arm, scenario, seed, ticks, params, injections, opening_debt)
+            for arm in ARMS
         },
     )
 
@@ -112,7 +122,14 @@ def print_metrics_table(result: RunResult) -> None:
 
     rows = [
         ("Energy delivered kWh", baseline.served_kwh, vidyut.served_kwh, 0),
+        ("Demand flexibility kWh", baseline.flexibility_kwh, vidyut.flexibility_kwh, 1),
         ("Unserved energy kWh", baseline.unserved_kwh, vidyut.unserved_kwh, 1),
+        (
+            "Energy balance error kWh",
+            baseline.energy_balance_error_kwh,
+            vidyut.energy_balance_error_kwh,
+            6,
+        ),
         ("Unserved energy cost Rs", baseline.unserved_cost_rs, vidyut.unserved_cost_rs, 0),
         ("Homes dark, peak count", baseline.peak_homes_dark, vidyut.peak_homes_dark, 0),
         ("Homes dark, household-minutes", baseline.homes_dark_minutes, vidyut.homes_dark_minutes, 0),

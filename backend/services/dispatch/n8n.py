@@ -77,5 +77,6 @@ def dispatch(run_id: str, outbox: Outbox, batch_size: int = 50) -> DispatchRepor
                 error=str(exc),
             )
         delivered += len(batch)
+        outbox.acknowledge(len(batch))
 
     return DispatchReport(configured=True, attempted=len(notifications), delivered=delivered)

@@ -28,6 +28,7 @@ class DtSnapshot:
 
 @dataclass
 class ArmMetrics:
+    converged: bool = True
     peak_kva: float = 0.0
     spread_pct: float = 0.0
     losses_kw: float = 0.0
@@ -60,6 +61,9 @@ class RunTotals:
     peak_homes_dark: int = 0
     critical_uptime_pct: float = 100.0
     unserved_kwh: float = 0.0
+    demanded_kwh: float = 0.0
+    flexibility_kwh: float = 0.0
+    energy_balance_error_kwh: float = 0.0
     unserved_cost_rs: float = 0.0
     served_kwh: float = 0.0
     losses_pct_of_delivered: float = 0.0
@@ -115,6 +119,7 @@ def tick_snapshot(
     homes_dark = sum(d.households_dark for d in dts)
 
     metrics = ArmMetrics(
+        converged=result.converged,
         peak_kva=round(total_kw / POWER_FACTOR, 1),
         spread_pct=round(spread, 1),
         losses_kw=round(result.losses_kw, 2) if result.converged else 0.0,
@@ -148,7 +153,7 @@ def critical_uptime(world: World, tick: int) -> float:
 
 def current_gini(world: World) -> float:
     debts = np.array(
-        [world.ledger.debt_of(hh_id) for hh_id in world.households], dtype=float
+        [world.ledger.accrued_of(hh_id) for hh_id in world.households], dtype=float
     )
     return gini(debts)
 
@@ -177,6 +182,14 @@ def finalise(world: World, snapshots: list[ArmSnapshot]) -> RunTotals:
     totals.peak_homes_dark = max(s.metrics.homes_dark for s in snapshots)
     totals.critical_uptime_pct = critical_uptime(world, len(snapshots) - 1)
     totals.unserved_kwh = world.unserved_kwh
+    totals.demanded_kwh = world.demanded_kwh
+    totals.flexibility_kwh = world.flexibility_kwh
+    totals.energy_balance_error_kwh = abs(
+        world.demanded_kwh
+        - world.served_kwh
+        - world.flexibility_kwh
+        - world.unserved_kwh
+    )
     totals.unserved_cost_rs = world.unserved_kwh * world.scenario.tariff_rs_per_kwh
     totals.served_kwh = world.served_kwh
     totals.losses_pct_of_delivered = (

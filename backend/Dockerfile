@@ -13,7 +13,7 @@ RUN uv sync --frozen --no-dev
 
 COPY services ./services
 COPY data ./data
-COPY ml ./ml
+COPY ml/models/*.json ./ml/models/
 
 ENV PATH="/app/.venv/bin:$PATH"
 

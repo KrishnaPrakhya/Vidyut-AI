@@ -57,13 +57,54 @@ def test_out_of_range_param_is_rejected(client: TestClient) -> None:
     assert response.status_code == 422
 
 
-def test_models_endpoint_reports_untrained_state_honestly(client: TestClient) -> None:
+REQUIRED_FORECAST_MODELS = {"seasonal_naive", "chronos_finetuned"}
+
+
+def test_models_endpoint_is_honest_about_what_is_trained(client: TestClient) -> None:
     body = client.get("/api/models").json()
-    assert "forecast" in body["models"]
-    forecast = body["models"]["forecast"]
+    assert {"forecast", "nilm"} <= set(body["models"])
+
+    for name, artifact in body["models"].items():
+        if artifact["trained"]:
+            continue
+        assert "not found" in artifact["message"] or "not valid JSON" in artifact["message"]
+        assert "MASE" not in json.dumps(artifact), (
+            f"{name} is untrained but the payload carries metrics; the page would show "
+            f"numbers with nothing behind them"
+        )
+
+
+def test_trained_forecast_artifact_has_everything_the_page_needs(client: TestClient) -> None:
+    forecast = client.get("/api/models").json()["models"]["forecast"]
     if not forecast["trained"]:
-        assert "not found" in forecast["message"]
-        assert "MASE" not in json.dumps(forecast)
+        pytest.skip("forecast model not trained in this checkout")
+
+    assert REQUIRED_FORECAST_MODELS <= set(forecast["models"])
+    for name, scores in forecast["models"].items():
+        assert scores["MASE"] is not None and scores["MASE"] > 0, name
+
+    assert forecast["cold_start"]["history_days"] > 0
+    assert forecast["n_series"] > 0 and forecast["n_obs"] > 0
+    assert forecast["holdout"]
+
+    provenance = forecast["data"]
+    assert provenance["real_measurements"] is True
+    assert provenance["synthetic_training_data"] is False, (
+        "a headline metric trained on synthetic data must never reach the models page"
+    )
+
+
+def test_forecast_beats_the_naive_baseline(client: TestClient) -> None:
+    forecast = client.get("/api/models").json()["models"]["forecast"]
+    if not forecast["trained"]:
+        pytest.skip("forecast model not trained in this checkout")
+
+    naive = forecast["models"]["seasonal_naive"]["MASE"]
+    tuned = forecast["models"]["chronos_finetuned"]["MASE"]
+    assert tuned < naive, (
+        f"the trained model ({tuned}) is no better than seasonal naive ({naive}); "
+        f"the models page would be claiming an improvement that does not exist"
+    )
 
 
 def test_summary_reports_both_arms_and_deltas(client: TestClient, ready_run: str) -> None:

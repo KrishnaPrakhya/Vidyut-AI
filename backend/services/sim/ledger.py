@@ -16,11 +16,13 @@ class CurtailmentRecord:
     kw: float
     minutes: float
     reason_code: str
+    device_kind: str | None = None
 
 
 @dataclass
 class FairnessLedger:
     debt_min: dict[str, float] = field(default_factory=dict)
+    opening_debt: dict[str, float] = field(default_factory=dict)
     records: list[CurtailmentRecord] = field(default_factory=list)
 
     def charge(
@@ -32,24 +34,41 @@ class FairnessLedger:
         kw: float,
         minutes: float,
         reason_code: str,
+        device_kind: str | None = None,
     ) -> float:
         weighted = minutes * DEBT_WEIGHT[level]
         self.debt_min[household_id] = self.debt_min.get(household_id, 0.0) + weighted
         self.records.append(
-            CurtailmentRecord(tick, household_id, dt_id, level, kw, minutes, reason_code)
+            CurtailmentRecord(
+                tick,
+                household_id,
+                dt_id,
+                level,
+                kw,
+                minutes,
+                reason_code,
+                device_kind,
+            )
         )
         return weighted
 
-    def debt_of(self, household_id: str) -> float:
+    def accrued_of(self, household_id: str) -> float:
         return self.debt_min.get(household_id, 0.0)
 
+    def debt_of(self, household_id: str) -> float:
+        return self.opening_debt.get(household_id, 0.0) + self.debt_min.get(household_id, 0.0)
+
     def normalised_debt(self, household_id: str) -> float:
-        if not self.debt_min:
+        standing = self.debt_of(household_id)
+        if standing <= 0.0:
             return 0.0
-        peak = max(self.debt_min.values())
+        peak = max(
+            self.debt_of(hh_id)
+            for hh_id in set(self.opening_debt) | set(self.debt_min)
+        )
         if peak <= 0.0:
             return 0.0
-        return self.debt_of(household_id) / peak
+        return standing / peak
 
 
 def gini(values: np.ndarray) -> float:

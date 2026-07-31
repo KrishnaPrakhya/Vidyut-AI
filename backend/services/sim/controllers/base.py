@@ -27,6 +27,8 @@ class TickEvent:
     households: int
     reason_code: str
     detail: str = ""
+    forecast_kw: float | None = None
+    safe_limit_kw: float | None = None
 
 
 @dataclass
@@ -42,9 +44,21 @@ class ControllerState:
         households: int,
         reason_code: str,
         detail: str = "",
+        forecast_kw: float | None = None,
+        safe_limit_kw: float | None = None,
     ) -> None:
         self.events.append(
-            TickEvent(tier, action, target, round(kw, 2), households, reason_code, detail)
+            TickEvent(
+                tier,
+                action,
+                target,
+                round(kw, 2),
+                households,
+                reason_code,
+                detail,
+                round(forecast_kw, 3) if forecast_kw is not None else None,
+                round(safe_limit_kw, 3) if safe_limit_kw is not None else None,
+            )
         )
 
     def drain(self) -> list[TickEvent]:

@@ -58,5 +58,8 @@ class ActuationState:
             if c.active_at(tick) and c.level == "disconnect"
         }
 
+    def households_active(self, tick: int) -> set[str]:
+        return {command.household_id for command in self.commands if command.active_at(tick)}
+
     def prune(self, tick: int) -> None:
         self.commands = [c for c in self.commands if c.expires_tick > tick]

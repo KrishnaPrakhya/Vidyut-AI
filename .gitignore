@@ -24,10 +24,18 @@ backend/build/
 backend/dist/
 backend/wheels/
 backend/*.egg-info
+.uv-cache/
+.uv-python/
 
 # Project data and generated artifacts
-backend/data/
+backend/data/*
+!backend/data/scenarios/
+!backend/data/scenarios/*.yaml
+!backend/data/recorded/
+!backend/data/recorded/*.json
 backend/ml/artifacts/
+backend/ml/models/*.pt
+backend/ml/models/*.zip
 
 # Node / Next.js frontend
 frontend/node_modules/

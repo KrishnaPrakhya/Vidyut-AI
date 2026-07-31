@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import math
+import os
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 from fastapi import FastAPI, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
@@ -18,15 +21,35 @@ from services.api.schemas import (
 )
 from services.api.store import store
 from services.dispatch.n8n import dispatch
+from services.persistence.engine import check as db_check
+from services.persistence.engine import create_schema, session_scope
+from services.persistence.queries import (
+    fairness_leaderboard_rows,
+    household_history,
+    household_profile,
+)
 from services.sim.injection import Injection
 from services.sim.scenario import available_scenarios
 
 DEFAULT_PLAYBACK_TICKS_PER_SECOND = 4.0
 
-app = FastAPI(title="Vidyut", version="0.1.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    status = create_schema()
+    if status.configured and not status.reachable:
+        print(f"database configured but unreachable, continuing in memory: {status.error}")
+    yield
+
+
+app = FastAPI(title="Vidyut", version="0.1.0", lifespan=lifespan)
+cors_origins = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -34,7 +57,11 @@ app.add_middleware(
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok", "scenarios": available_scenarios()}
+    return {
+        "status": "ok",
+        "scenarios": available_scenarios(),
+        "database": db_check().to_dict(),
+    }
 
 
 @app.get("/api/scenarios")
@@ -51,6 +78,7 @@ def create_run(request: CreateRunRequest) -> CreateRunResponse:
         seed=request.seed,
         ticks=request.ticks,
         params=request.params.overrides(),
+        carry_debt=request.carry_debt,
     )
     return CreateRunResponse(run_id=record.run_id, status=record.status)
 
@@ -93,6 +121,12 @@ def run_summary(run_id: str) -> dict:
 @app.post("/api/runs/{run_id}/inject")
 def inject(run_id: str, request: InjectRequest) -> dict:
     record = _require_record(run_id)
+    if record.status != "ready" or record.result is None:
+        raise HTTPException(status_code=409, detail="run must be ready before injection")
+    if request.dt_id is not None:
+        dt_ids = set(record.result.arms["vidyut"].world.dt_ids)
+        if request.dt_id not in dt_ids:
+            raise HTTPException(status_code=422, detail="unknown distribution transformer")
     from_tick = request.from_tick if request.from_tick is not None else 0
     injection = Injection(
         type=request.type,
@@ -102,7 +136,7 @@ def inject(run_id: str, request: InjectRequest) -> dict:
     )
     updated = store.inject(run_id, injection)
     if updated is None:
-        raise HTTPException(status_code=404, detail="run not found")
+        raise HTTPException(status_code=409, detail="run is no longer ready")
     return {
         "run_id": run_id,
         "status": updated.status,
@@ -188,6 +222,38 @@ def run_report(run_id: str) -> Response:
     )
 
 
+@app.get("/api/households/{household_id}")
+def household(
+    household_id: str,
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    with session_scope() as session:
+        if session is None:
+            raise HTTPException(
+                status_code=503,
+                detail="household history requires a database; DATABASE_URL is not configured",
+            )
+        profile = household_profile(session, household_id)
+        if profile is None:
+            raise HTTPException(status_code=404, detail="household not found")
+        return {**profile, "history": household_history(session, household_id, limit, offset)}
+
+
+@app.get("/api/fairness/leaderboard")
+def fairness_leaderboard(
+    dt_id: str | None = Query(default=None),
+    limit: int = Query(default=25, ge=1, le=200),
+) -> dict:
+    with session_scope() as session:
+        if session is None:
+            raise HTTPException(
+                status_code=503,
+                detail="fairness leaderboard requires a database; DATABASE_URL is not configured",
+            )
+        return {"dt_id": dt_id, "households": fairness_leaderboard_rows(session, dt_id, limit)}
+
+
 @app.get("/api/models")
 def models() -> dict:
     return read_artifacts()
@@ -202,12 +268,26 @@ async def stream_run(websocket: WebSocket, run_id: str) -> None:
         await websocket.close()
         return
 
-    speed = float(websocket.query_params.get("speed", DEFAULT_PLAYBACK_TICKS_PER_SECOND))
-    start_tick = int(websocket.query_params.get("from_tick", 0))
+    try:
+        speed = float(
+            websocket.query_params.get("speed", DEFAULT_PLAYBACK_TICKS_PER_SECOND)
+        )
+        start_tick = int(websocket.query_params.get("from_tick", 0))
+        if not math.isfinite(speed) or speed < 0.1 or speed > 200.0:
+            raise ValueError
+        if start_tick < 0 or start_tick > record.ticks:
+            raise ValueError
+    except (TypeError, ValueError):
+        await websocket.send_json(
+            {"type": "error", "detail": "invalid speed or from_tick"}
+        )
+        await websocket.close(code=1008)
+        return
 
     await websocket.send_json({"type": "status", "status": record.status})
     ready = await asyncio.to_thread(store.wait_ready, run_id)
-    if not ready or record.result is None:
+    result = record.result
+    if not ready or result is None:
         await websocket.send_json(
             {"type": "error", "detail": record.error or "simulation did not complete"}
         )
@@ -226,7 +306,7 @@ async def stream_run(websocket: WebSocket, run_id: str) -> None:
     )
 
     interval = 1.0 / max(speed, 0.1)
-    arms = record.result.arms
+    arms = result.arms
 
     try:
         for tick in range(start_tick, record.ticks):

@@ -39,3 +39,7 @@ class Outbox:
 
     def clear(self) -> None:
         self.notifications = []
+
+    def acknowledge(self, count: int) -> None:
+        if count > 0:
+            self.notifications = self.notifications[count:]

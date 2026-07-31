@@ -10,7 +10,7 @@ from services.sim.demand import DemandModel, build_demand_model, design_day_peak
 from services.sim.domain import Household
 from services.sim.ledger import FairnessLedger
 from services.sim.network import NetworkContext, build_network, resize_transformers, set_dt_load_kw
-from services.sim.population import build_population
+from services.sim.population import build_population, population_key
 from services.sim.rng import make_rngs
 from services.sim.scenario import Scenario, load_scenario
 
@@ -47,6 +47,10 @@ class World:
     dt_energized: dict[str, bool] = field(default_factory=dict)
     dt_reenergize_tick: dict[str, int] = field(default_factory=dict)
     scheduled_faults: list[tuple[str, int, int]] = field(default_factory=list)
+    scheduled_outages: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
+    simulation_ticks: int = 96
+    demanded_kwh: float = 0.0
+    flexibility_kwh: float = 0.0
     unserved_kwh: float = 0.0
     served_kwh: float = 0.0
     critical_household_dark_minutes: float = 0.0
@@ -65,12 +69,21 @@ class World:
 
 
 def build_world(
-    arm: str, scenario_name: str, seed: int, params: dict[str, float] | None = None
+    arm: str,
+    scenario_name: str,
+    seed: int,
+    params: dict[str, float] | None = None,
+    opening_debt: dict[str, float] | None = None,
 ) -> World:
     rngs = make_rngs(seed)
     scenario = load_scenario(scenario_name, params)
     ctx = build_network(rngs["topology"])
-    households = build_population(ctx, scenario, rngs["population"])
+    households = build_population(
+        ctx,
+        scenario,
+        rngs["population"],
+        population_key(seed, scenario),
+    )
     demand = build_demand_model(households, scenario, rngs["profiles"])
 
     dt_of_household = {hh_id: households[hh_id].dt_id for hh_id in demand.household_ids}
@@ -94,7 +107,13 @@ def build_world(
         ctx=ctx,
         households=households,
         demand=demand,
-        ledger=FairnessLedger(),
+        ledger=FairnessLedger(
+            opening_debt={
+                hh_id: debt
+                for hh_id, debt in (opening_debt or {}).items()
+                if hh_id in households
+            }
+        ),
         actuation=ActuationState(),
         rngs=rngs,
         dt_index_of_household=dt_index_of_household,
@@ -105,14 +124,15 @@ def build_world(
     )
 
 
-def household_demand_kw(world: World, t: int) -> np.ndarray:
-    demand = natural_demand_kw(world.demand, t)
+def household_demand_kw(world: World, t: int) -> tuple[np.ndarray, np.ndarray]:
+    natural = natural_demand_kw(world.demand, t)
+    demand = natural.copy()
     reductions = world.actuation.reduction_by_household(t)
     if reductions:
         rows = np.array([world.demand.row_of[h] for h in reductions], dtype=int)
         values = np.array(list(reductions.values()))
         demand[rows] = np.maximum(demand[rows] - values, 0.0)
-    return demand
+    return natural, demand
 
 
 def aggregate_to_dt(world: World, household_kw: np.ndarray) -> np.ndarray:
@@ -166,19 +186,25 @@ def solve_power_flow(world: World) -> PowerFlowResult:
 
 
 def apply_scheduled_faults(world: World, t: int) -> list[str]:
-    faulted: list[str] = []
-    for dt_id, start, end in world.scheduled_faults:
-        if start <= t < end:
-            world.dt_energized[dt_id] = False
-            world.dt_reenergize_tick.pop(dt_id, None)
-            faulted.append(dt_id)
-        elif t == end:
-            world.dt_energized[dt_id] = True
-    return faulted
+    unavailable: list[str] = []
+    for dt_id in world.dt_ids:
+        faulted = any(
+            candidate == dt_id and start <= t < end
+            for candidate, start, end in world.scheduled_faults
+        )
+        controlled = any(
+            start <= t < end for start, end in world.scheduled_outages.get(dt_id, [])
+        )
+        world.dt_energized[dt_id] = not faulted and not controlled
+        if not world.dt_energized[dt_id]:
+            unavailable.append(dt_id)
+    return unavailable
 
 
 def apply_loads(world: World, t: int) -> tuple[np.ndarray, np.ndarray, int]:
-    household_kw = household_demand_kw(world, t)
+    natural_kw, household_kw = household_demand_kw(world, t)
+    world.demanded_kwh += float(natural_kw.sum()) * TICK_HOURS
+    world.flexibility_kwh += float((natural_kw - household_kw).sum()) * TICK_HOURS
     disconnected = world.actuation.households_disconnected(t)
 
     served = household_kw.copy()

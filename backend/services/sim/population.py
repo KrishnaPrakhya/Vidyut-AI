@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 
 from services.sim.domain import Device, Household, HouseholdTier
@@ -73,7 +75,10 @@ def _make_device(kind: str, rng: np.random.Generator, controllable: bool) -> Dev
 
 
 def build_population(
-    ctx: NetworkContext, scenario: Scenario, rng: np.random.Generator
+    ctx: NetworkContext,
+    scenario: Scenario,
+    rng: np.random.Generator,
+    population_key: str,
 ) -> dict[str, Household]:
     households: dict[str, Household] = {}
     feeder_affluence = {
@@ -85,7 +90,7 @@ def build_population(
         affluence = feeder_affluence[ctx.feeder_of_dt[dt_id]]
         ac_density = float(np.clip(affluence * rng.lognormal(0.0, 0.22), 0.35, 2.4))
         for k in range(HOUSEHOLDS_PER_DT):
-            hh_id = f"{dt_id}-H{k + 1:03d}"
+            hh_id = f"{population_key}-{dt_id}-H{k + 1:03d}"
             tier = _assign_tier(rng, scenario)
             ami = rng.random() < scenario.ami_penetration
             profile = _base_shape(rng) * rng.uniform(0.55, 1.45) + scenario.night_base_kw
@@ -101,3 +106,16 @@ def build_population(
             households[hh_id] = household
             dt.households.append(hh_id)
     return households
+
+
+def population_key(seed: int, scenario: Scenario) -> str:
+    values = (
+        seed,
+        scenario.ami_penetration,
+        scenario.connected_device_penetration,
+        scenario.ev_penetration,
+        scenario.critical_share,
+        scenario.essential_share,
+    )
+    digest = hashlib.sha256("|".join(map(str, values)).encode("utf-8")).hexdigest()
+    return f"P{digest[:10]}"

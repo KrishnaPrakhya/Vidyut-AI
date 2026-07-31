@@ -1,10 +1,31 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vidyut
+      POSTGRES_PASSWORD: vidyut
+      POSTGRES_DB: vidyut
+    ports:
+      - "5433:5432"
+    volumes:
+      - vidyut_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vidyut -d vidyut"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build: ./backend
     ports:
       - "8000:8000"
     environment:
+      DATABASE_URL: postgresql+psycopg://vidyut:vidyut@postgres:5432/vidyut
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./backend/ml/models:/app/ml/models:ro
       - ./backend/data/recorded:/app/data/recorded
@@ -17,3 +38,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+volumes:
+  vidyut_pgdata:

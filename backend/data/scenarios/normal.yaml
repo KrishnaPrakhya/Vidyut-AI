@@ -1,0 +1,10 @@
+ami_penetration: 0.55
+connected_device_penetration: 0.25
+ev_penetration: 0.08
+critical_share: 0.02
+essential_share: 0.18
+peak_start_tick: 68
+peak_end_tick: 80
+peak_multiplier: 1.15
+night_base_kw: 0.15
+tariff_rs_per_kwh: 7.5

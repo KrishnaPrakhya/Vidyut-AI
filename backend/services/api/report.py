@@ -85,7 +85,9 @@ def _table(rows: list[list], widths: list[float], align_right_from: int = 1) -> 
 def _headline_rows(baseline, vidyut) -> list[list]:
     spec = [
         ("Energy delivered", "served_kwh", "kWh", 0),
+        ("Demand flexibility", "flexibility_kwh", "kWh", 1),
         ("Unserved energy", "unserved_kwh", "kWh", 1),
+        ("Energy balance error", "energy_balance_error_kwh", "kWh", 6),
         ("Unserved energy cost", "unserved_cost_rs", "Rs", 0),
         ("Homes dark, peak count", "peak_homes_dark", "homes", 0),
         ("Homes dark", "homes_dark_minutes", "household-min", 0),
@@ -226,7 +228,7 @@ def build_report_pdf(run_id: str, record, result: RunResult) -> bytes:
         Paragraph("Decision log", styles["h2"]),
         Paragraph(
             f"{total_events:,} decisions were recorded for the Vidyut arm. Every action carries a "
-            f"machine-generated reason. The first {min(MAX_EVENT_ROWS, total_events)} are shown; the "
+            f"machine-generated reason. Up to {min(MAX_EVENT_ROWS, total_events)} are shown; the "
             f"complete log is available from the events endpoint.",
             styles["body"],
         ),

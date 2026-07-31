@@ -8,7 +8,7 @@ from services.actuation.commands import ActuationCommand
 from services.dispatch.outbox import Notification, Outbox, clock_of
 from services.forecast.base import Forecaster
 from services.sim.controllers.base import ControllerState, ReasonCode, TickEvent
-from services.sim.demand import TICK_MINUTES
+from services.sim.demand import TICK_MINUTES, natural_demand_kw
 from services.sim.reconfiguration import apply_reconfiguration, evaluate_reconfiguration
 from services.sim.scenario import N_TICKS
 from services.sim.world import PowerFlowResult, World
@@ -75,6 +75,8 @@ class VidyutController:
         dt_id = world.dt_ids[row]
 
         self.last_forecast = {
+            "model": self.forecaster.name,
+            "runtime_ready": True,
             "dt_id": dt_id,
             "horizon_kw": [round(float(v), 1) for v in forecast[row, :FORECAST_HORIZON]],
             "safe_limit_kw": round(float(safe_limits[row]), 1),
@@ -103,14 +105,19 @@ class VidyutController:
             if forecast[row, horizon_offset] <= safe_limit:
                 continue
 
-            latest_start = run.natural_start + run.window_ticks
+            latest_start = min(
+                run.natural_start + run.window_ticks,
+                world.simulation_ticks - run.duration_ticks,
+            )
+            if latest_start < run.start + 1:
+                continue
             new_start = self._first_clear_tick(
                 forecast, row, tick, run.start + 1, latest_start, safe_limit
             )
             if new_start is None:
                 continue
 
-            run.start = min(new_start, N_TICKS - run.duration_ticks)
+            run.start = new_start
             self.shifted_runs.add(idx)
             shifted_kw += run.rated_kw
             shifted_count += 1
@@ -142,7 +149,7 @@ class VidyutController:
         for candidate in range(earliest, min(latest, N_TICKS - 1) + 1):
             offset = candidate - tick - 1
             if offset < 0 or offset >= forecast.shape[1]:
-                return candidate
+                continue
             if forecast[row, offset] <= safe_limit:
                 return candidate
         return None
@@ -193,12 +200,18 @@ class VidyutController:
                 continue
 
             predicted_kw = float(horizon.max())
+            peak_offset = int(np.argmax(horizon))
+            start_tick = tick + 1 + peak_offset
+            if start_tick >= world.simulation_ticks:
+                continue
             safe_limit = world.safe_limit_kw(dt_id)
             need_kw = predicted_kw - safe_limit
             if need_kw <= 0.0:
                 continue
 
-            price_kw, n_priced = self._broadcast_price_signal(world, tick, dt_id, need_kw)
+            price_kw, n_priced = self._broadcast_price_signal(
+                world, tick, dt_id, need_kw, start_tick
+            )
             if n_priced:
                 self.state.emit(
                     tier=0,
@@ -218,7 +231,9 @@ class VidyutController:
             if need_kw <= 0.0:
                 continue
 
-            cleared_kw, n_devices = self._clear_with_devices(world, tick, dt_id, need_kw)
+            cleared_kw, n_devices = self._clear_with_devices(
+                world, tick, dt_id, need_kw, start_tick
+            )
             remaining = need_kw - cleared_kw
 
             if n_devices:
@@ -229,6 +244,8 @@ class VidyutController:
                     kw=cleared_kw,
                     households=n_devices,
                     reason_code=ReasonCode.PRE_EMPTIVE_THERMAL,
+                    forecast_kw=predicted_kw,
+                    safe_limit_kw=safe_limit,
                     detail=(
                         f"{dt_id} forecast {predicted_kw:.0f} kW against safe limit "
                         f"{safe_limit:.0f} kW; {n_devices} connected devices curtailed"
@@ -237,7 +254,7 @@ class VidyutController:
 
             if remaining > 0.0:
                 limited_kw, n_limited = self._clear_with_load_limit(
-                    world, tick, dt_id, remaining
+                    world, tick, dt_id, remaining, start_tick
                 )
                 if n_limited:
                     self.state.emit(
@@ -247,6 +264,8 @@ class VidyutController:
                         kw=limited_kw,
                         households=n_limited,
                         reason_code=ReasonCode.ESCALATION_LOAD_LIMIT,
+                        forecast_kw=predicted_kw,
+                        safe_limit_kw=safe_limit,
                         detail=(
                             f"{dt_id} short {remaining:.0f} kW after device curtailment; "
                             f"temporary load ceiling on {n_limited} standard-tier households"
@@ -254,7 +273,7 @@ class VidyutController:
                     )
 
     def _broadcast_price_signal(
-        self, world: World, tick: int, dt_id: str, need_kw: float
+        self, world: World, tick: int, dt_id: str, need_kw: float, start_tick: int
     ) -> tuple[float, int]:
         last = self.last_price_signal_tick.get(dt_id)
         if last is not None and tick - last < PRICE_SIGNAL_COOLDOWN_TICKS:
@@ -273,7 +292,10 @@ class VidyutController:
         self.last_price_signal_tick[dt_id] = tick
         expected_kw = 0.0
         responders = 0
-        reference_tick = min(tick + 1, N_TICKS - 1)
+        end_tick = min(start_tick + PRICE_SIGNAL_TICKS, world.simulation_ticks)
+        if end_tick <= start_tick:
+            return 0.0, 0
+        reference_tick = min(start_tick, N_TICKS - 1)
 
         for hh_id in recipients:
             if rng.random() > PRICE_RESPONSE_PROBABILITY:
@@ -290,8 +312,8 @@ class VidyutController:
                     dt_id=dt_id,
                     level="price_signal",
                     kw_reduction=reduction,
-                    issued_tick=tick + 1,
-                    expires_tick=tick + 1 + PRICE_SIGNAL_TICKS,
+                    issued_tick=start_tick,
+                    expires_tick=end_tick,
                     reason_code=ReasonCode.PRICE_SIGNAL_PEAK,
                 )
             )
@@ -310,22 +332,29 @@ class VidyutController:
                 reason_code=ReasonCode.PRICE_SIGNAL_PEAK,
                 message=(
                     f"Peak tariff of {PEAK_TARIFF_MULTIPLIER:.1f}x applies for the next "
-                    f"{PRICE_SIGNAL_TICKS * TICK_MINUTES} minutes in your area. Shifting heavy "
+                    f"{(end_tick - start_tick) * TICK_MINUTES} minutes in your area. Shifting heavy "
                     f"appliance use past this window will lower your bill."
                 ),
                 tariff_multiplier=PEAK_TARIFF_MULTIPLIER,
                 expected_reduction_kw=round(expected_kw, 2),
-                window_minutes=PRICE_SIGNAL_TICKS * TICK_MINUTES,
+                window_minutes=(end_tick - start_tick) * TICK_MINUTES,
             )
         )
         return expected_kw, responders
 
     def _clear_with_devices(
-        self, world: World, tick: int, dt_id: str, need_kw: float
+        self, world: World, tick: int, dt_id: str, need_kw: float, start_tick: int
     ) -> tuple[float, int]:
-        offers = self._collect_offers(world, tick, dt_id, respect_cooldown=True)
+        end_tick = min(start_tick + DEVICE_CURTAIL_TICKS, world.simulation_ticks)
+        if end_tick <= start_tick:
+            return 0.0, 0
+        offers = self._collect_offers(
+            world, tick, dt_id, start_tick, respect_cooldown=True
+        )
         if sum(o.kw for o in offers) < need_kw:
-            offers = self._collect_offers(world, tick, dt_id, respect_cooldown=False)
+            offers = self._collect_offers(
+                world, tick, dt_id, start_tick, respect_cooldown=False
+            )
         offers.sort(key=lambda o: o.score)
 
         cleared = 0.0
@@ -340,8 +369,8 @@ class VidyutController:
                     dt_id=dt_id,
                     level="device",
                     kw_reduction=offer.kw,
-                    issued_tick=tick + 1,
-                    expires_tick=tick + 1 + DEVICE_CURTAIL_TICKS,
+                    issued_tick=start_tick,
+                    expires_tick=end_tick,
                     reason_code=ReasonCode.PRE_EMPTIVE_THERMAL,
                     device_kind=offer.device_kind,
                 )
@@ -352,19 +381,25 @@ class VidyutController:
                 dt_id=dt_id,
                 level="device",
                 kw=offer.kw,
-                minutes=DEVICE_CURTAIL_TICKS * TICK_MINUTES,
+                minutes=(end_tick - start_tick) * TICK_MINUTES,
                 reason_code=ReasonCode.PRE_EMPTIVE_THERMAL,
+                device_kind=offer.device_kind,
             )
             cleared += offer.kw
             selected += 1
         return cleared, selected
 
     def _collect_offers(
-        self, world: World, tick: int, dt_id: str, respect_cooldown: bool
+        self,
+        world: World,
+        tick: int,
+        dt_id: str,
+        start_tick: int,
+        respect_cooldown: bool,
     ) -> list[Offer]:
         offers: list[Offer] = []
-        stress = world.demand.thermal_stress[min(tick + 1, N_TICKS - 1)]
-        active_commands = {c.household_id for c in world.actuation.active(tick + 1)}
+        stress = world.demand.thermal_stress[min(start_tick, N_TICKS - 1)]
+        active_commands = world.actuation.households_active(start_tick)
 
         for hh_id in world.ctx.dts[dt_id].households:
             household = world.households[hh_id]
@@ -375,26 +410,34 @@ class VidyutController:
             if respect_cooldown and last is not None and tick - last < CURTAIL_COOLDOWN_TICKS:
                 continue
 
-            normalised_debt = world.ledger.normalised_debt(hh_id)
+            components: list[tuple[float, float, str]] = []
             for device in household.devices:
                 if not device.controllable:
                     continue
 
                 kw = device.rated_kw * stress if device.kind == "ac" else device.rated_kw
-                if device.kind != "ac" and not self._run_active(world, hh_id, device.kind, tick + 1):
+                if device.kind != "ac" and not self._run_active(
+                    world, hh_id, device.kind, start_tick
+                ):
                     continue
                 if kw <= 0.01:
                     continue
 
-                cost_per_kw = device.comfort_cost_per_min * TICK_MINUTES / kw
-                offers.append(
-                    Offer(
-                        household_id=hh_id,
-                        kw=kw,
-                        score=cost_per_kw * (1.0 + DEBT_WEIGHT * normalised_debt),
-                        device_kind=device.kind,
-                    )
+                components.append((kw, device.comfort_cost_per_min * TICK_MINUTES, device.kind))
+            if not components:
+                continue
+            total_kw = sum(component[0] for component in components)
+            total_cost = sum(component[1] for component in components)
+            normalised_debt = world.ledger.normalised_debt(hh_id)
+            offers.append(
+                Offer(
+                    household_id=hh_id,
+                    kw=total_kw,
+                    score=(total_cost / total_kw)
+                    * (1.0 + DEBT_WEIGHT * normalised_debt),
+                    device_kind=",".join(sorted({component[2] for component in components})),
                 )
+            )
         return offers
 
     def _run_active(self, world: World, hh_id: str, kind: str, tick: int) -> bool:
@@ -404,35 +447,42 @@ class VidyutController:
         )
 
     def _clear_with_load_limit(
-        self, world: World, tick: int, dt_id: str, need_kw: float
+        self, world: World, tick: int, dt_id: str, need_kw: float, start_tick: int
     ) -> tuple[float, int]:
+        end_tick = min(start_tick + LOAD_LIMIT_TICKS, world.simulation_ticks)
+        if end_tick <= start_tick:
+            return 0.0, 0
+        active = world.actuation.households_active(start_tick)
         eligible = [
             hh_id
             for hh_id in world.ctx.dts[dt_id].households
             if world.households[hh_id].tier == "standard"
             and world.households[hh_id].ami
             and world.households[hh_id].meter_load_limit_supported
+            and hh_id not in active
         ]
         eligible.sort(key=world.ledger.debt_of)
 
-        row = world.dt_row[dt_id]
-        per_household_kw = LOAD_LIMIT_REDUCTION_FRACTION * max(
-            world.demand.base_kw[world.demand.row_of[eligible[0]], tick] if eligible else 0.0, 0.4
-        )
+        projected = natural_demand_kw(world.demand, min(start_tick, N_TICKS - 1))
 
         cleared = 0.0
         selected = 0
         for hh_id in eligible:
             if cleared >= need_kw:
                 break
+            available_kw = float(projected[world.demand.row_of[hh_id]])
+            reduction_kw = LOAD_LIMIT_REDUCTION_FRACTION * available_kw
+            if reduction_kw <= 0.01:
+                continue
+            self.last_curtailed_tick[hh_id] = tick
             world.actuation.issue(
                 ActuationCommand(
                     household_id=hh_id,
                     dt_id=dt_id,
                     level="load_limit",
-                    kw_reduction=per_household_kw,
-                    issued_tick=tick + 1,
-                    expires_tick=tick + 1 + LOAD_LIMIT_TICKS,
+                    kw_reduction=reduction_kw,
+                    issued_tick=start_tick,
+                    expires_tick=end_tick,
                     reason_code=ReasonCode.ESCALATION_LOAD_LIMIT,
                 )
             )
@@ -441,11 +491,11 @@ class VidyutController:
                 household_id=hh_id,
                 dt_id=dt_id,
                 level="load_limit",
-                kw=per_household_kw,
-                minutes=LOAD_LIMIT_TICKS * TICK_MINUTES,
+                kw=reduction_kw,
+                minutes=(end_tick - start_tick) * TICK_MINUTES,
                 reason_code=ReasonCode.ESCALATION_LOAD_LIMIT,
             )
-            cleared += per_household_kw
+            cleared += reduction_kw
             selected += 1
         return cleared, selected
 
@@ -463,7 +513,11 @@ class VidyutController:
             rating_kw = world.rating_kw(dt_id)
             need_kw = (loading - EMERGENCY_LOADING_PCT) / 100.0 * rating_kw
 
-            already = world.actuation.households_disconnected(tick + 1)
+            start_tick = tick + 1
+            end_tick = min(start_tick + DISCONNECT_TICKS, world.simulation_ticks)
+            if end_tick <= start_tick:
+                continue
+            already = world.actuation.households_active(start_tick)
             eligible = [
                 hh_id
                 for hh_id in world.ctx.dts[dt_id].households
@@ -471,7 +525,9 @@ class VidyutController:
             ]
             eligible.sort(key=world.ledger.debt_of)
 
-            household_kw = world.demand.base_kw[:, min(tick + 1, N_TICKS - 1)]
+            household_kw = natural_demand_kw(
+                world.demand, min(start_tick, N_TICKS - 1)
+            )
             cleared = 0.0
             selected = 0
             for hh_id in eligible:
@@ -484,8 +540,8 @@ class VidyutController:
                         dt_id=dt_id,
                         level="disconnect",
                         kw_reduction=kw,
-                        issued_tick=tick + 1,
-                        expires_tick=tick + 1 + DISCONNECT_TICKS,
+                        issued_tick=start_tick,
+                        expires_tick=end_tick,
                         reason_code=ReasonCode.LAST_RESORT_ROTATION,
                     )
                 )
@@ -495,7 +551,7 @@ class VidyutController:
                     dt_id=dt_id,
                     level="disconnect",
                     kw=kw,
-                    minutes=DISCONNECT_TICKS * TICK_MINUTES,
+                    minutes=(end_tick - start_tick) * TICK_MINUTES,
                     reason_code=ReasonCode.LAST_RESORT_ROTATION,
                 )
                 cleared += kw

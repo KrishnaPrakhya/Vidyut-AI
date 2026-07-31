@@ -1,0 +1,64 @@
+{
+  "dataset": "iAWE",
+  "resample": "1min",
+  "aggregate_source": "metered_mains",
+  "window": 599,
+  "appliances": {
+    "fridge": {
+      "MAE": 19.584,
+      "F1": 0.8993,
+      "precision": 0.8809,
+      "recall": 0.9185,
+      "on_threshold_w": 50.0,
+      "duty_cycle_pct": 83.86,
+      "mean_power_w": 67.92,
+      "test_windows": 7992,
+      "train_windows": 32184,
+      "epochs_run": 25,
+      "minutes_trained": 1.29
+    }
+  },
+  "accepted_appliances": [],
+  "deployment_ready": false,
+  "rejection_reasons": [
+    "air-conditioner channels do not overlap metered mains for enough contiguous minutes to train a deferrable-load model",
+    "the fridge evaluation artifact predates the required constant-power and trivial-state baseline gates",
+    "no validated deferrable appliance model is available"
+  ],
+  "deferrable_share_of_aggregate": 0.0,
+  "data_quality": {
+    "observed_fraction": {
+      "mains": 0.5898,
+      "ac_1": 0.0643,
+      "ac_2": 0.055,
+      "fridge": 0.4881,
+      "tv": 0.0505,
+      "laptop": 0.2564
+    },
+    "usable_per_appliance": {
+      "fridge": 0.4812
+    },
+    "max_gap_bridged_minutes": 5,
+    "gaps_are_masked_not_interpolated": true
+  },
+  "split": {
+    "train": {
+      "from": "2013-05-24 05:30:00+05:30",
+      "to": "2013-08-14 05:18:00+05:30",
+      "minutes": 118069
+    },
+    "val": {
+      "from": "2013-08-14 05:19:00+05:30",
+      "to": "2013-08-31 18:59:00+05:30",
+      "minutes": 25301
+    },
+    "test": {
+      "from": "2013-08-31 19:00:00+05:30",
+      "to": "2013-09-18 08:40:00+05:30",
+      "minutes": 25301
+    }
+  },
+  "role": "observability only: estimates the deferrable share of household load and verifies realised reduction after an event; issues no control commands",
+  "trained_at": "2026-07-31T07:11:59+00:00",
+  "seed": 42
+}

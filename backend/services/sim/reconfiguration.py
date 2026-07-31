@@ -15,8 +15,7 @@ W_LOSSES = 0.30
 W_MAX_LOADING = 0.50
 W_SPREAD = 0.20
 
-IMPROVEMENT_MARGIN = 0.04
-CANDIDATES_PER_TIE_END = 3
+IMPROVEMENT_MARGIN = 0.005
 
 
 @dataclass
@@ -55,6 +54,8 @@ def _feasible(result: PowerFlowResult) -> bool:
         return False
     if float(np.nanmax(result.line_loading_pct)) > MAX_LOADING_PCT:
         return False
+    if float(np.nanmax(result.trafo_loading_pct)) > MAX_LOADING_PCT:
+        return False
     return True
 
 
@@ -65,9 +66,7 @@ def _candidate_pairs(world: World) -> list[SwitchPair]:
             continue
         close_switch = world.ctx.tie_switch_pp_idx[ts_id]
         loop = switches_in_loop(world.ctx, ts_id)
-        head = loop[:CANDIDATES_PER_TIE_END]
-        tail = loop[-CANDIDATES_PER_TIE_END:]
-        for open_switch in dict.fromkeys(head + tail):
+        for open_switch in loop:
             if open_switch == close_switch:
                 continue
             pairs.append(SwitchPair(ts_id, close_switch, open_switch))

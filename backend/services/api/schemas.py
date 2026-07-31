@@ -27,6 +27,7 @@ class CreateRunRequest(BaseModel):
     seed: int = 42
     ticks: int = Field(default=N_TICKS, ge=1, le=N_TICKS)
     params: ScenarioParams = Field(default_factory=ScenarioParams)
+    carry_debt: bool = True
 
 
 class CreateRunResponse(BaseModel):
@@ -81,6 +82,9 @@ def delta_payload(baseline: RunTotals, vidyut: RunTotals) -> dict:
         "peak_homes_dark",
         "critical_uptime_pct",
         "unserved_kwh",
+        "demanded_kwh",
+        "flexibility_kwh",
+        "energy_balance_error_kwh",
         "unserved_cost_rs",
         "served_kwh",
         "gini",
