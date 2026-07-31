@@ -20,19 +20,17 @@ from services.persistence.models import (
     Household,
     HouseholdImpact,
     Notification,
+    NotificationDelivery,
     Run,
     RunArmTotal,
     RunInjection,
     TickMetric,
+    TopologyChange,
 )
 from services.sim.ledger import DEBT_WEIGHT
+from services.timebase import clock_of
 
 CHUNK = 2000
-
-
-def _clock(tick: int) -> str:
-    minutes = tick * 15
-    return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
 def _bulk(session: Session, model, rows: list[dict]) -> None:
@@ -77,11 +75,11 @@ def sync_network_master(session: Session, world) -> None:
         {"id": dt.id, "feeder_id": dt.feeder_id, "rating_kva": float(dt.rating_kva)}
         for dt in world.ctx.dts.values()
     ]
+    transformer_insert = pg_insert(DistributionTransformerRow)
     session.execute(
-        pg_insert(DistributionTransformerRow)
-        .values(transformers)
-        .on_conflict_do_update(
-            index_elements=["id"], set_={"rating_kva": pg_insert(DistributionTransformerRow).excluded.rating_kva}
+        transformer_insert.values(transformers).on_conflict_do_update(
+            index_elements=["id"],
+            set_={"rating_kva": transformer_insert.excluded.rating_kva},
         )
     )
 
@@ -174,6 +172,11 @@ def save_run(session: Session, record, result) -> None:
     _update_fairness_ledger(session, run_id, result.arms["vidyut"])
 
 
+def delete_run(session: Session, run_id: str) -> None:
+    _rollback_fairness_ledger(session, run_id)
+    session.execute(delete(Run).where(Run.run_id == run_id))
+
+
 def _save_arm(session: Session, run_id: str, arm: str, arm_result) -> None:
     totals = asdict(arm_result.totals)
     totals.pop("spread_series", None)
@@ -201,7 +204,7 @@ def _save_arm(session: Session, run_id: str, arm: str, arm_result) -> None:
                     "run_id": run_id,
                     "arm": arm,
                     "tick": tick,
-                    "clock": _clock(tick),
+                    "clock": clock_of(tick),
                     **asdict(event),
                 }
             )
@@ -209,6 +212,14 @@ def _save_arm(session: Session, run_id: str, arm: str, arm_result) -> None:
     _bulk(session, TickMetric, tick_rows)
     _bulk(session, DtTickReading, dt_rows)
     _bulk(session, FeederTickReading, feeder_rows)
+    _bulk(
+        session,
+        TopologyChange,
+        [
+            {"run_id": run_id, "arm": arm, **asdict(change)}
+            for change in arm_result.world.topology_changes
+        ],
+    )
 
     action_ids: dict[tuple[int, str, str], int] = {}
     for row in action_rows:
@@ -275,6 +286,144 @@ def _save_notifications(session: Session, run_id: str, arm_result) -> None:
         Notification,
         [{"run_id": run_id, **notification.to_dict()} for notification in notifications],
     )
+
+
+def pending_notification_ids(session: Session, run_id: str) -> list[int]:
+    return list(
+        session.execute(
+            select(Notification.id)
+            .outerjoin(
+                NotificationDelivery,
+                NotificationDelivery.notification_id == Notification.id,
+            )
+            .where(
+                Notification.run_id == run_id,
+                (
+                    NotificationDelivery.id.is_(None)
+                    | (NotificationDelivery.status == "failed")
+                ),
+            )
+            .order_by(Notification.id)
+        ).scalars()
+    )
+
+
+def record_notification_dispatch(
+    session: Session, notification_ids: list[int], provider: str = "n8n"
+) -> None:
+    now = datetime.now(timezone.utc)
+    delivery_insert = pg_insert(NotificationDelivery)
+    rows = [
+        {
+            "notification_id": notification_id,
+            "provider": provider,
+            "status": "dispatched",
+            "dispatched_at": now,
+            "delivered_at": None,
+            "error": None,
+        }
+        for notification_id in notification_ids
+    ]
+    if rows:
+        session.execute(
+            delivery_insert.values(rows).on_conflict_do_update(
+                index_elements=["notification_id"],
+                set_={
+                    "provider": delivery_insert.excluded.provider,
+                    "status": delivery_insert.excluded.status,
+                    "dispatched_at": delivery_insert.excluded.dispatched_at,
+                    "delivered_at": None,
+                    "error": None,
+                },
+            )
+        )
+
+
+def pending_notification_rows(session: Session, run_id: str) -> list[tuple[int, dict]]:
+    rows = session.execute(
+        select(Notification)
+        .outerjoin(
+            NotificationDelivery,
+            NotificationDelivery.notification_id == Notification.id,
+        )
+        .where(
+            Notification.run_id == run_id,
+            (
+                NotificationDelivery.id.is_(None)
+                | (NotificationDelivery.status == "failed")
+            ),
+        )
+        .order_by(Notification.id)
+    ).scalars()
+    fields = (
+        "tick",
+        "clock",
+        "channel",
+        "event_type",
+        "dt_id",
+        "feeder_id",
+        "households",
+        "reason_code",
+        "message",
+        "tariff_multiplier",
+        "expected_reduction_kw",
+        "window_minutes",
+    )
+    return [
+        (
+            row.id,
+            {
+                field: (
+                    float(getattr(row, field))
+                    if field in {"tariff_multiplier", "expected_reduction_kw"}
+                    and getattr(row, field) is not None
+                    else getattr(row, field)
+                )
+                for field in fields
+            },
+        )
+        for row in rows
+    ]
+
+
+def update_notification_delivery(
+    session: Session,
+    notification_id: int,
+    status: str,
+    provider_message_id: str | None,
+    error: str | None,
+) -> NotificationDelivery | None:
+    delivery = session.execute(
+        select(NotificationDelivery)
+        .where(NotificationDelivery.notification_id == notification_id)
+        .order_by(NotificationDelivery.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if delivery is None:
+        if session.get(Notification, notification_id) is None:
+            return None
+        delivery = NotificationDelivery(
+            notification_id=notification_id,
+            provider="n8n",
+            status=status,
+        )
+        session.add(delivery)
+    transitions = {
+        "queued": {"queued", "dispatched", "failed"},
+        "dispatched": {"dispatched", "delivered", "failed"},
+        "failed": {"dispatched", "failed"},
+        "delivered": {"delivered"},
+    }
+    if status not in transitions.get(delivery.status, {status}):
+        raise ValueError(
+            f"delivery status cannot change from {delivery.status} to {status}"
+        )
+    delivery.status = status
+    delivery.provider_message_id = provider_message_id
+    delivery.error = error
+    if status == "delivered":
+        delivery.delivered_at = datetime.now(timezone.utc)
+    return delivery
 
 
 def _update_fairness_ledger(session: Session, run_id: str, arm_result) -> None:

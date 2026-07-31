@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from services.api.schemas import delta_payload, tick_payload, totals_payload
@@ -18,10 +19,16 @@ def build_recording(result: RunResult) -> dict:
 
     return {
         "meta": {
+            "schema_version": 2,
             "scenario": result.scenario,
             "seed": result.seed,
             "ticks": ticks,
             "arms": list(result.arms.keys()),
+            "params": result.params,
+            "injections": [injection.to_dict() for injection in result.injections],
+            "simulation_version": os.environ.get(
+                "VIDYUT_SIM_VERSION", "development"
+            ),
             "simulated": True,
         },
         "ticks": [

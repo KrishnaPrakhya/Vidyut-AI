@@ -6,7 +6,8 @@ import numpy as np
 
 from services.sim.controllers.base import TickEvent
 from services.sim.ledger import gini
-from services.sim.world import TICK_HOURS, PowerFlowResult, World
+from services.sim.world import PowerFlowResult, World
+from services.timebase import TICK_HOURS, TICK_MINUTES
 
 POWER_FACTOR = 0.95
 
@@ -146,7 +147,7 @@ def critical_uptime(world: World, tick: int) -> float:
     n_critical = sum(1 for h in world.households.values() if h.tier == "critical")
     if n_critical == 0:
         return 100.0
-    elapsed_minutes = (tick + 1) * 15.0
+    elapsed_minutes = (tick + 1) * TICK_MINUTES
     possible = n_critical * elapsed_minutes
     return 100.0 * (1.0 - world.critical_household_dark_minutes / possible)
 

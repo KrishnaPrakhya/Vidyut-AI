@@ -6,6 +6,8 @@ from services.sim.network import NetworkContext
 
 
 def _build_switch_graph(ctx: NetworkContext) -> nx.Graph:
+    if ctx.switch_graph is not None:
+        return ctx.switch_graph
     graph = nx.Graph()
     graph.add_nodes_from(ctx.net.bus.index)
     for dt_id, line_idx in ctx.dt_section_line.items():
@@ -14,6 +16,7 @@ def _build_switch_graph(ctx: NetworkContext) -> nx.Graph:
         graph.add_edge(int(line.from_bus), int(line.to_bus), switch_idx=switch_idx)
     for ts_id, (bus_a, bus_b) in ctx.tie_switch_bus.items():
         graph.add_edge(bus_a, bus_b, switch_idx=ctx.tie_switch_pp_idx[ts_id])
+    ctx.switch_graph = graph
     return graph
 
 

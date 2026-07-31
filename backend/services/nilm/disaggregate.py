@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from dataclasses import dataclass
@@ -68,6 +69,15 @@ def model_status() -> NilmStatus:
         reasons.append("evaluation artifact is missing or invalid")
     if not WEIGHTS_PATH.exists():
         reasons.append("model weights are missing")
+    elif payload and payload.get("deployment_ready"):
+        expected_hash = payload.get("weights_sha256")
+        if not expected_hash:
+            reasons.append("model weights have no integrity hash")
+        else:
+            with WEIGHTS_PATH.open("rb") as handle:
+                actual_hash = hashlib.file_digest(handle, "sha256").hexdigest()
+            if actual_hash != expected_hash:
+                reasons.append("model weights do not match the evaluation artifact")
 
     missing = sorted(set(DEFERRABLE_APPLIANCES) - set(available))
     if missing:
@@ -78,9 +88,13 @@ def model_status() -> NilmStatus:
         constant_mae = metrics.get("MAE_predicting_the_mean")
         f1 = metrics.get("F1")
         trivial_f1 = metrics.get("F1_always_on_baseline")
-        if mae is None or constant_mae is None or float(mae) >= float(constant_mae):
+        if mae is None or constant_mae is None:
+            reasons.append(f"{appliance} has no constant-power baseline evaluation")
+        elif float(mae) >= float(constant_mae):
             reasons.append(f"{appliance} does not beat the constant-power baseline")
-        if f1 is None or trivial_f1 is None or float(f1) <= float(trivial_f1):
+        if f1 is None or trivial_f1 is None:
+            reasons.append(f"{appliance} has no trivial state-baseline evaluation")
+        elif float(f1) <= float(trivial_f1):
             reasons.append(f"{appliance} does not beat the trivial state baseline")
 
     if payload and payload.get("deployment_ready") is False:
@@ -181,7 +195,12 @@ def disaggregate(mains_w: np.ndarray, batch_size: int = 512) -> DisaggregationRe
         stacked = np.stack(deferrable)
         valid = np.all(np.isfinite(stacked), axis=0) & (values > 0)
         predicted_w = np.sum(stacked[:, valid], axis=0)
-        share = float(np.clip(predicted_w.sum() / values[valid].sum(), 0.0, 1.0))
+        aggregate_w = float(values[valid].sum())
+        share = (
+            float(np.clip(predicted_w.sum() / aggregate_w, 0.0, 1.0))
+            if aggregate_w > 0
+            else 0.0
+        )
     return DisaggregationResult(outputs, share, True)
 
 

@@ -77,3 +77,15 @@ def test_price_signal_only_targets_non_addressable() -> None:
     for command in world.actuation.commands:
         if command.level == "price_signal":
             assert not world.households[command.household_id].addressable
+
+
+def test_control_commands_do_not_overlap_for_a_household() -> None:
+    world = simulate_arm("vidyut", "heatwave", 42).world
+    for tick in range(96):
+        active = [
+            command
+            for command in world.actuation.commands
+            if command.active_at(tick) and command.level != "price_signal"
+        ]
+        household_ids = [command.household_id for command in active]
+        assert len(household_ids) == len(set(household_ids))

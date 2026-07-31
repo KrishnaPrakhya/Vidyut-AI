@@ -1,31 +1,4 @@
-# %% [markdown]
-# # Vidyut — load forecasting on real Indian meter data, Chronos-Bolt-Small fine-tune
-#
-# Trains and evaluates on **real Indian electricity measurements**. No synthetic data is used
-# for training or for any headline metric, and nothing is upsampled: every series is
-# downsampled to 15 minutes, which averages real readings rather than inventing them.
-#
-# ## Sources
-#
-# | dataset | what it is | native rate | role |
-# |---|---|---|---|
-# | **CEEW Mathura & Bareilly** | ~100 urban households in Uttar Pradesh, May 2019 to Oct 2021 | 3 min | required |
-# | **I-BLEND** | 7 buildings at IIIT-Delhi, 52 months | 1 min | optional |
-# | **iAWE** | 1 Delhi home, 73 days | 1 min | optional |
-#
-# CEEW carries the work. Its households are aggregated into **disjoint** groups, which
-# reconstructs load at the scale Vidyut actually operates on: a distribution transformer
-# serving roughly 70 homes. The sum of real meters is still a real measurement, so this yields
-# genuine Indian transformer-scale load without simulating anything.
-#
-# ## Before running
-#
-# 1. Accelerator: **GPU T4 x2** or P100. Internet: **ON** (Hugging Face checkpoint).
-# 2. Attach the CEEW dataset, e.g. `jehanbhathena/smart-meter-data-mathura-and-bareilly`
-#    or `pythonafroz/electricity-smart-meter-data-from-india`.
-# 3. Optionally attach I-BLEND and iAWE for extra series.
 
-# %%
 import os
 import subprocess
 import sys
@@ -41,19 +14,7 @@ print("installed — restarting the kernel, this is expected")
 print("after the restart, run from the NEXT cell onward and skip this one")
 os.kill(os.getpid(), 9)
 
-# %% [markdown]
-# ### Why these versions are pinned
-#
-# AutoGluon 1.2 loads Chronos through `transformers`, and the Kaggle image ships a newer major
-# version whose module layout differs. Left alone, both Chronos models fail with
-# `cannot import name 'PreTrainedModel' from 'transformers'` — and AutoGluon catches per-model
-# exceptions during `fit`, so training "succeeds" with only SeasonalNaive and the failure is
-# easy to miss.
-#
-# `pandas==2.2.2` is the last release built against the numpy 1.x ABI, matching `numpy==1.26.4`,
-# which AutoGluon's dependencies require.
 
-# %%
 import accelerate
 import torch
 import transformers
@@ -65,7 +26,6 @@ print("cuda", torch.cuda.is_available(),
       torch.cuda.get_device_name(0) if torch.cuda.is_available() else "")
 print("Chronos imports resolve; the fine-tune will not be silently skipped")
 
-# %%
 import json
 import re
 import shutil
@@ -101,22 +61,10 @@ WORKING = Path("/kaggle/working")
 MODEL_DIR = WORKING / "predictor"
 
 print("torch", torch.__version__, "| cuda", torch.cuda.is_available())
-print("device:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU only")
+print("device:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU")
 print("numpy", np.__version__, "| pandas", pd.__version__)
 
-# %% [markdown]
-# ## Reading CEEW
-#
-# The published layout differs between mirrors, so nothing about it is assumed. The loader finds
-# the CSVs, works out whether meters are split across files or share one file with an id column,
-# and identifies the timestamp and energy columns by name.
-#
-# **The one ambiguity that matters** is whether `t_kWh` is a cumulative meter register or the
-# energy used within each interval. Treating a register as interval consumption produces a
-# monotonically rising "load" and a model that has learned nothing. It is detected rather than
-# assumed: a series that almost never decreases is a register, and is differenced.
 
-# %%
 TIME_HINTS = ("x_timestamp", "timestamp", "time", "datetime", "date")
 ENERGY_HINTS = ("t_kwh", "kwh", "energy", "consumption")
 POWER_HINTS = ("kw", "w", "power", "load")
@@ -138,7 +86,6 @@ IMPLAUSIBLE_KW = 5_000.0
 
 
 def is_cumulative(values: np.ndarray) -> bool:
-    """A register only ever climbs. Interval consumption rises and falls every reading."""
     finite = values[np.isfinite(values)]
     if finite.size < 50:
         return False
@@ -207,7 +154,7 @@ def read_meter_frame(path: Path) -> pd.DataFrame | None:
 
 def series_from_group(group: pd.DataFrame) -> pd.Series | None:
     series = group.set_index("_ts")["_value"].sort_index().dropna()
-    series = series[~series.index.duplicated(keep="first")]
+    series = series[~series.index.duplicated()]
     if len(series) < 500:
         return None
     minutes = median_interval_minutes(series.index)
@@ -252,7 +199,6 @@ CEEW_DATAVERSE = (
 
 
 def fetch_ceew_from_dataverse() -> bool:
-    """Fallback only. Attaching the Kaggle dataset is faster and does not depend on the API."""
     import zipfile
     from urllib.request import urlretrieve
 
@@ -328,17 +274,7 @@ sample = next(iter(ceew.values()))
 print(f"example series: {len(sample):,} points, {sample.index.min()} to {sample.index.max()}")
 print(f"mean {sample.mean():.3f} kW, max {sample.max():.2f} kW")
 
-# %% [markdown]
-# ## Aggregate to transformer scale
-#
-# Vidyut allocates against one transformer serving about 70 homes, so the model should see load
-# at that scale. Meters are pooled into **disjoint** groups: no household contributes to more
-# than one group, so no energy is double counted and the groups are not correlated copies.
-#
-# Individual household series are kept too. They are spikier than an aggregate, which is useful
-# for a model that also has to cope with small transformers.
 
-# %%
 spans = {name: (s.index.min(), s.index.max()) for name, s in ceew.items()}
 overall_start = min(a for a, _ in spans.values())
 overall_end = max(b for _, b in spans.values())
@@ -413,18 +349,7 @@ for cohort_index, (start, end, members) in enumerate(cohorts):
 
 assert prepared, "no cohort survived the coverage filter"
 
-# %% [markdown]
-# ### Choosing the aggregation size
-#
-# A transformer in this network serves 70 homes, but no cohort has 70 meters recording together
-# for long enough. Rather than report a transformer-scale metric backed by zero series, the
-# group size is set to the largest value that still yields several independent groups.
-#
-# This is defensible: the diversity effect that smooths aggregate load saturates quickly. Most
-# of the smoothing between one home and seventy has already happened by twenty-five, so a group
-# of that size behaves like a small transformer rather than like a single household.
 
-# %%
 MIN_AGGREGATE_GROUPS = 4
 SIZE_CANDIDATES = [70, 60, 50, 40, 30, 25, 20, 15, 10]
 
@@ -463,10 +388,6 @@ for aligned in prepared:
     names = sorted(aligned.columns)
 
     def add_group(group_members: list[str], item_id: str) -> bool:
-        """Requiring every member to report at once shatters the aggregate, because with
-        twenty-five meters some one of them is nearly always missing. Instead the partial sum
-        is scaled by the fraction reporting, the standard treatment for missing AMI reads.
-        This estimates the group total rather than fabricating individual readings."""
         block = aligned[group_members]
         present = block.notna().sum(axis=1)
         usable = present >= max(len(group_members) * MIN_MEMBER_PRESENCE, 1)
@@ -529,13 +450,7 @@ assert mean_correction < 1.45, (
     f"is estimated rather than measured; raise MIN_MEMBER_PRESENCE"
 )
 
-# %% [markdown]
-# ## Optional extra Indian series
-#
-# I-BLEND contributes seven IIIT-Delhi buildings, at a similar scale to a distribution
-# transformer. iAWE contributes one Delhi home. Both are downsampled to 15 minutes.
 
-# %%
 def load_generic(keywords: tuple[str, ...], prefix: str, divide_by: float = 1.0) -> list[pd.DataFrame]:
     if not INPUT_ROOT.exists():
         return []
@@ -574,19 +489,11 @@ for name, extra in (("I-BLEND", iblend), ("iAWE", iawe)):
 real = real.sort_values(["item_id", "timestamp"]).reset_index(drop=True)
 print(f"\ntotal series {real.item_id.nunique()}, rows {len(real):,}")
 
-# %% [markdown]
-# ## Validate and split
-#
-# The final `prediction_length` of each series is the test target. The cut is chronological per
-# series, so no future value is visible during fitting.
 
-# %%
 MIN_TOTAL_POINTS = PREDICTION_LENGTH * 5
 
 
 def longest_regular_run(group: pd.DataFrame, item_id: str) -> pd.DataFrame | None:
-    """Gaps make a series irregular, and AutoGluon needs a fixed frequency. Rather than
-    interpolate across holes, each series is cut down to its longest unbroken stretch."""
     series = group.set_index("timestamp")["target"].sort_index()
     grid = pd.date_range(series.index.min(), series.index.max(), freq=FREQ)
     series = series.reindex(grid)
@@ -629,25 +536,7 @@ print(f"series {before_series} -> {real.item_id.nunique()} after trimming to unb
 print(f"rows   {before_rows:,} -> {len(real):,} "
       f"({len(real) / before_rows * 100:.0f}% retained)")
 
-# %% [markdown]
-# ### Fitting inside Kaggle memory
-#
-# Kaggle memory is the binding constraint, so something has to give. The choice is between
-# shortening every series or keeping fewer series at full length, and full length wins.
-#
-# Truncating to a recent window would cut whole seasons: the longest cohort runs across all of
-# 2020, and keeping only its final months would discard the Indian summer peak, which is the
-# regime this model most needs to forecast.
-#
-# Dropping households costs far less. Fine-tuning samples `2000 steps x 32` = 64,000 windows,
-# and even a reduced set leaves an order of magnitude more windows than that, so the model never
-# sees the shortfall. A hundred and sixty households from two neighbouring districts are also
-# highly correlated, so the later ones add little the earlier ones have not already shown.
-#
-# Aggregate groups are never dropped. They are the scale Vidyut actually forecasts and there are
-# only twenty-three of them.
 
-# %%
 ROW_BUDGET = 2_500_000
 
 lengths = real.groupby("item_id").size().sort_values(ascending=False)
@@ -703,7 +592,6 @@ print(f"\ntrain {len(train_raw):,} rows across {train_raw.item_id.nunique()} ser
 print(f"holdout {len(test_target):,} rows, {PREDICTION_LENGTH} steps per series")
 print(f"span {train_raw.timestamp.min()} to {test_target.timestamp.max()}")
 
-# %%
 from autogluon.timeseries import TimeSeriesDataFrame, TimeSeriesPredictor
 
 def to_ts(frame: pd.DataFrame) -> TimeSeriesDataFrame:
@@ -734,14 +622,7 @@ cold_start_data = to_ts(cold_slice)
 print("train", train_data.shape, "| cold start", cold_start_data.shape,
       f"({cold_slice.item_id.nunique()} series)")
 
-# %% [markdown]
-# ## Metrics
-#
-# MASE is computed explicitly so the denominator is unambiguous: the in-sample mean absolute
-# error of a seasonal-naive forecast at period 96. Guarded against degenerate series, which
-# otherwise divide by floating-point noise and return absurd values.
 
-# %%
 MAPE_FLOOR_KW = 0.05
 RELATIVE_SCALE_FLOOR = 1e-6
 
@@ -811,12 +692,8 @@ def score(truth_frame, prediction, history, steps: int, prefix: str | None = Non
         "points_excluded_from_mape": excluded,
     }
 
-# %% [markdown]
-# ## Fit
 
-# %%
 def fitted_models(fitted_predictor) -> list[str]:
-    """The accessor was renamed across AutoGluon versions; try both before giving up."""
     for accessor in ("model_names", "get_model_names"):
         method = getattr(fitted_predictor, accessor, None)
         if callable(method):
@@ -868,7 +745,6 @@ assert not missing, (
     f"transformers version is the usual cause and shows up as an import error."
 )
 
-# %%
 def label_for(name: str) -> str | None:
     if "SeasonalNaive" in name:
         return "seasonal_naive"
@@ -905,14 +781,7 @@ for model_name in fitted_models(predictor):
 
 assert "chronos_finetuned" in results and "seasonal_naive" in results, fitted_models(predictor)
 
-# %% [markdown]
-# ## Cold start
-#
-# Fourteen days is roughly what a newly metered feeder has, which is the situation across much
-# of the RDSS rollout. A gradient-boosted model trained from scratch on that little history is
-# the honest comparison for a pretrained model.
 
-# %%
 COLD_DIR = WORKING / "predictor_cold_start"
 if COLD_DIR.exists():
     shutil.rmtree(COLD_DIR)
@@ -943,20 +812,14 @@ for model_name in fitted_models(cold_predictor):
     cold_results[label] = score(truth, prediction, cold_start_data, PREDICTION_LENGTH)
     print(f"cold start {label:<20} MASE {cold_results[label]['MASE']}")
 
-# %% [markdown]
-# ## Precompute forecasts for playback
 
-# %%
 best = next(n for n in fitted_models(predictor) if label_for(n) == "chronos_finetuned")
 predictor.predict(train_data, model=best).reset_index().to_parquet(
     WORKING / "forecasts.parquet", index=False
 )
 print("wrote forecasts.parquet")
 
-# %% [markdown]
-# ## Write the eval artifact
 
-# %%
 counts_by_kind = {
     kind: int(sum(1 for i in real.item_id.unique() if kind in i))
     for kind in ("CEEW_transformer", "CEEW_cluster", "CEEW_home", "IBLEND", "IAWE")
@@ -1044,7 +907,6 @@ with (WORKING / "forecast_eval.json").open("w") as handle:
 print(json.dumps(payload["models"], indent=2))
 print(json.dumps(payload["by_scale"].get("chronos_finetuned", {}), indent=2))
 
-# %%
 naive = results["seasonal_naive"]["day_ahead"]["MASE"]
 zero_shot = results.get("chronos_zeroshot", {}).get("day_ahead", {}).get("MASE")
 tuned = results["chronos_finetuned"]["day_ahead"]["MASE"]

@@ -67,7 +67,10 @@ def test_models_endpoint_is_honest_about_what_is_trained(client: TestClient) -> 
     for name, artifact in body["models"].items():
         if artifact["trained"]:
             continue
-        assert "not found" in artifact["message"] or "not valid JSON" in artifact["message"]
+        assert any(
+            phrase in artifact["message"]
+            for phrase in ("not found", "not valid JSON", "unavailable")
+        )
         assert "MASE" not in json.dumps(artifact), (
             f"{name} is untrained but the payload carries metrics; the page would show "
             f"numbers with nothing behind them"
@@ -105,6 +108,17 @@ def test_forecast_beats_the_naive_baseline(client: TestClient) -> None:
         f"the trained model ({tuned}) is no better than seasonal naive ({naive}); "
         f"the models page would be claiming an improvement that does not exist"
     )
+
+
+def test_model_registry_distinguishes_evaluation_from_runtime(
+    client: TestClient,
+) -> None:
+    models = client.get("/api/models").json()["models"]
+    assert models["forecast"]["trained"] is True
+    assert models["forecast"]["evaluation_only"] is True
+    assert models["forecast"]["runtime_ready"] is False
+    assert models["nilm"]["trained"] is False
+    assert models["nilm"]["runtime_ready"] is False
 
 
 def test_summary_reports_both_arms_and_deltas(client: TestClient, ready_run: str) -> None:
@@ -188,3 +202,32 @@ def test_injection_triggers_resimulation(client: TestClient) -> None:
     summary = client.get(f"/api/runs/{run_id}/summary").json()
     assert summary["ready"] is True
     assert summary["injections"][0]["type"] == "heatwave"
+
+
+def test_injection_requires_a_ready_run(client: TestClient) -> None:
+    run_id = client.post(
+        "/api/runs", json={"scenario": "normal", "seed": 8}
+    ).json()["run_id"]
+    response = client.post(
+        f"/api/runs/{run_id}/inject",
+        json={"type": "heatwave", "magnitude": 0.4, "from_tick": 2},
+    )
+    assert response.status_code == 409
+
+
+def test_fault_injection_rejects_unknown_transformer(
+    client: TestClient, ready_run: str
+) -> None:
+    response = client.post(
+        f"/api/runs/{ready_run}/inject",
+        json={"type": "dt_fault", "magnitude": 1.0, "dt_id": "missing"},
+    )
+    assert response.status_code == 422
+
+
+def test_websocket_rejects_invalid_playback_parameters(
+    client: TestClient, ready_run: str
+) -> None:
+    with client.websocket_connect(f"/ws/runs/{ready_run}?speed=nan") as ws:
+        message = ws.receive_json()
+        assert message["type"] == "error"

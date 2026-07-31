@@ -1,25 +1,5 @@
-# %% [markdown]
-# # Vidyut — NILM, seq2point on iAWE
-#
-# Trains one seq2point CNN per appliance on the iAWE dataset (Delhi, 73 days) and reports
-# per-appliance MAE and F1 on a strictly held-out final period.
-#
-# **NILM is observability, not control.** These models estimate how much of a household's load
-# is deferrable, and verify after an event whether the expected reduction actually happened.
-# They issue no commands. `services/nilm` has no import path to `services/actuation`, and a
-# test enforces it.
-#
-# **Before running**
-#
-# 1. Settings, Accelerator: **GPU T4 x2** or P100.
-# 2. Internet is *not* required; nothing is downloaded.
-# 3. Add the iAWE electricity CSVs as a Kaggle dataset. Download from `iawe.github.io`
-#    (the `electricity` folder). Do not install NILMTK; these files are parsed directly.
-#
-# About 31% of the series is missing. Gaps are **masked**, never interpolated: filling them
-# would invent appliance activations that never happened and inflate every metric below.
 
-# %%
+import hashlib
 import json
 import math
 import os
@@ -51,7 +31,6 @@ WORKING = Path("/kaggle/working")
 RESAMPLE = "1min"
 WINDOW = 99
 HALF = WINDOW // 2
-MAX_GAP_MINUTES = 5
 BATCH_SIZE = 512
 EPOCHS = 30
 PATIENCE = 5
@@ -63,27 +42,7 @@ print("device:", DEVICE)
 if DEVICE.type == "cpu":
     print("WARNING: no GPU. Enable the accelerator or this will take hours.")
 
-# %% [markdown]
-# ## Appliance map
-#
-# iAWE ships one CSV per channel. Channel numbering follows the dataset's own README. If the
-# loader reports a mismatch, correct `CHANNELS` here rather than guessing downstream.
-#
-# `on_watts` is the threshold separating on from off for the F1 score. An air conditioner idling
-# at 30 W is not "on" in any sense a planner cares about.
-#
-# The fridge threshold is 100 W rather than the conventional 50 W. At 50 W it reported an 84%
-# duty cycle, which is not a compressor cycling but a threshold sitting below the appliance's
-# resting draw; F1 against a class that is on 84% of the time is beaten by a classifier that
-# always says "on". A hundred watts separates compressor-running from fan-only.
-#
-# `WINDOW` is 99 minutes. The window only has to span a typical activation: an air conditioner
-# cycle runs half an hour to three hours, a fridge twenty to forty minutes. The 599-minute
-# window this started with was ten hours, longer than any of them, and its viability threshold
-# scales with window length so it excluded both air conditioners for want of a few thousand
-# minutes of coverage.
 
-# %%
 MAINS_CHANNELS = (1, 2)
 
 CHANNELS = {
@@ -115,18 +74,8 @@ DEFERRABLE = {"ac_1", "ac_2"}
 
 MAINS_CHANNEL_HINTS = ("mains", "aggregate", "total")
 
-# %% [markdown]
-# ## Load and align
-#
-# iAWE timestamps are unix epoch seconds in Asia/Kolkata. Readings are irregular, so each
-# channel is resampled onto a common 1-minute grid. `mean` is used within a minute; forward
-# filling is capped at `MAX_GAP_MINUTES` so short sensor dropouts are bridged but genuine
-# multi-hour outages stay missing and are excluded from training and scoring.
 
-# %%
 def extract_archives() -> Path | None:
-    """iAWE ships as electricity.tar.gz. Uploading the archive is far quicker than uploading
-    the several gigabytes it expands to, so it is unpacked here into the writable directory."""
     import tarfile
 
     roots = [Path("/kaggle/input"), Path("data/raw"), Path(".")]
@@ -175,7 +124,7 @@ def find_electricity_dir() -> Path:
 
     raise FileNotFoundError(
         "no iAWE CSVs found. Attach electricity.tar.gz from https://iawe.github.io "
-        "as a Kaggle dataset; it does not need to be unpacked first."
+        "as a Kaggle dataset; pre-extraction is unnecessary."
     )
 
 
@@ -212,7 +161,7 @@ def read_channel(path: Path) -> pd.Series:
         pd.to_numeric(frame[power_column], errors="coerce").to_numpy(), index=index
     )
     series = series[~series.index.isna()]
-    series = series[~series.index.duplicated(keep="first")].sort_index()
+    series = series[~series.index.duplicated()].sort_index()
     return series.resample(RESAMPLE).mean()
 
 
@@ -244,15 +193,7 @@ for path in csv_files:
 missing = [t for t in TARGETS if t not in channels]
 assert not missing, f"target appliances not found: {missing}. Check CHANNELS against the README."
 
-# %% [markdown]
-# ### Is the channel mapping right?
-#
-# iAWE numbers its two mains phases as channels 1 and 2, so the appliances begin at 3. Getting
-# this wrong is silent and ruinous: the model trains happily on mislabelled data and every
-# reported metric is meaningless. Peak power is the cheapest way to catch it. A fridge drawing
-# four kilowatts is not a fridge, it is the whole house.
 
-# %%
 suspicious = []
 for appliance, (low, high) in PLAUSIBLE_PEAK_WATTS.items():
     if appliance not in channels:
@@ -269,15 +210,7 @@ assert not suspicious, (
 )
 print("\npeak power is consistent with the labels")
 
-# %% [markdown]
-# ## Build the aggregate
-#
-# iAWE meters two phases. Where an explicit mains file is present it is used; otherwise the
-# aggregate is reconstructed by summing the submeters, which is stated here because a
-# reconstructed aggregate makes the disaggregation task easier than reality and the eval JSON
-# records which was used.
 
-# %%
 if mains_parts:
     mains = pd.concat(mains_parts, axis=1).sum(axis=1, min_count=1)
     aggregate_source = "metered_mains"
@@ -302,15 +235,7 @@ print(f"observed mains        {observed['mains'].mean() * 100:.1f}%")
 for target in TARGETS:
     print(f"observed {target:<16} {observed[target].mean() * 100:.1f}%")
 
-# %% [markdown]
-# ### One mask per appliance
-#
-# A separate model is trained for each appliance, so each needs only the aggregate and its own
-# submeter to be present. Demanding that all five align at the same minute throws away almost
-# everything: one poorly covered channel drags the intersection to nothing, and a channel that
-# happened to be offline for most of the study would silence the other four.
 
-# %%
 valid_for = {
     appliance: (frame["mains"].notna() & frame[appliance].notna())
     for appliance in TARGETS
@@ -328,16 +253,7 @@ if dropped_targets:
     print(f"\ntoo little coverage to train: {dropped_targets}")
 assert usable_targets, "no appliance has enough coverage; check the channel mapping"
 
-# %% [markdown]
-# ## Is the window size viable?
-#
-# A window is only usable when every one of its minutes is valid, so what matters is not the
-# missing *fraction* but the length of the contiguous runs between gaps. Thirty-one percent
-# missing in a few long outages leaves most windows intact; the same fraction scattered at
-# random would leave almost none. This is checked before training rather than after, because
-# discovering it from an empty dataloader costs a GPU session.
 
-# %%
 def contiguous_runs(mask: np.ndarray) -> np.ndarray:
     padded = np.concatenate([[False], mask, [False]])
     edges = np.flatnonzero(padded[1:] != padded[:-1])
@@ -372,22 +288,11 @@ assert viable, (
 )
 TARGETS = viable
 
-# %% [markdown]
-# ## Split by time
-#
-# The split is chronological, never random. Random windows would place near-identical minutes
-# either side of the boundary and the reported scores would be meaningless.
 
-# %%
 n = len(frame)
 
 
 def splits_for(appliance: str) -> dict[str, slice]:
-    """Each appliance is split at 70/15/15 of *its own* valid minutes rather than of the
-    calendar. Channels record in bursts, so a fixed calendar split hands an empty test set to
-    any appliance whose coverage sits early in the study. Splitting on its own observations
-    keeps the cut chronological, and therefore leak-free, while guaranteeing all three parts
-    contain data."""
     positions = np.flatnonzero(valid_for[appliance].to_numpy())
     if positions.size < 3:
         return {"train": slice(0, 0), "val": slice(0, 0), "test": slice(0, 0)}
@@ -412,7 +317,7 @@ for name, span in splits.items():
     )
 
 assert frame["mains"].notna().sum() > WINDOW * 10, "not enough usable aggregate data"
-print("\nnormalisation statistics are taken per appliance from its own training slice only")
+print("\nnormalisation statistics use each appliance training slice")
 print("per-appliance split boundaries:")
 for appliance in TARGETS:
     parts = splits_for(appliance)
@@ -423,15 +328,7 @@ for appliance in TARGETS:
         )
     )
 
-# %% [markdown]
-# ## Windowing
-#
-# seq2point maps a window of aggregate power to the appliance power at the window's midpoint.
-# A window is only emitted when every minute inside it is valid, so no window ever straddles a
-# gap. This is the step that keeps the 31% of missing data from leaking into training as
-# fabricated zeros.
 
-# %%
 class Seq2PointDataset(Dataset):
     def __init__(self, mains_values, target_values, valid_mask, appliance_mean, appliance_std,
                  mains_mean, mains_std):
@@ -488,13 +385,7 @@ def build_datasets(appliance: str):
         )
     return made, appliance_mean, appliance_std, appliance_splits
 
-# %% [markdown]
-# ## Model
-#
-# The seq2point architecture of Zhang et al. (2018): five convolutional layers followed by a
-# dense layer, predicting the midpoint value.
 
-# %%
 class Seq2Point(nn.Module):
     def __init__(self, window: int = WINDOW):
         super().__init__()
@@ -515,10 +406,7 @@ class Seq2Point(nn.Module):
     def forward(self, x):
         return self.head(self.features(x)).squeeze(-1)
 
-# %% [markdown]
-# ## Train
 
-# %%
 def train_appliance(appliance: str) -> dict:
     datasets, appliance_mean, appliance_std, appliance_splits = build_datasets(appliance)
     print(
@@ -676,14 +564,7 @@ if missing_deferrable:
     )
 deployment_ready = not rejection_reasons
 
-# %% [markdown]
-# ## Deferrable share
-#
-# The planner needs one number per household: how much of the load can be moved. Here it is
-# measured on the held-out period as the air-conditioning share of the aggregate, which is what
-# `services/nilm` will estimate at run time.
 
-# %%
 present_deferrable = [a for a in accepted if a in DEFERRABLE]
 if present_deferrable:
     test_start = max(splits_for(appliance)["test"].start for appliance in present_deferrable)
@@ -706,10 +587,17 @@ else:
     print("no deferrable appliance survived the coverage filter")
 print(f"measured deferrable share of aggregate on held-out data: {deferrable_share * 100:.1f}%")
 
-# %% [markdown]
-# ## Write the eval artifact
 
-# %%
+bundle = {
+    appliance: torch.load(WORKING / f"nilm_{appliance}.pt", map_location="cpu")
+    for appliance in accepted
+}
+model_path = WORKING / "nilm_model.pt"
+torch.save(bundle, model_path)
+with model_path.open("rb") as handle:
+    weights_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
+
+
 payload = {
     "dataset": "iAWE",
     "resample": RESAMPLE,
@@ -718,6 +606,7 @@ payload = {
     "appliances": results,
     "accepted_appliances": sorted(accepted),
     "deployment_ready": deployment_ready,
+    "weights_sha256": weights_sha256,
     "rejection_reasons": rejection_reasons,
     "deferrable_share_of_aggregate": round(deferrable_share, 4),
     "data_quality": {
@@ -737,7 +626,7 @@ payload = {
         for name, span in splits.items()
     },
     "role": (
-        "observability only: estimates the deferrable share of household load and verifies "
+        "observability: estimates the deferrable share of household load and verifies "
         "realised reduction after an event; issues no control commands"
     ),
     "trained_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -748,13 +637,6 @@ with (WORKING / "nilm_eval.json").open("w") as handle:
     json.dump(payload, handle, indent=2)
 
 print(json.dumps({k: {"MAE": v["MAE"], "F1": v["F1"]} for k, v in results.items()}, indent=2))
-
-# %%
-bundle = {
-    appliance: torch.load(WORKING / f"nilm_{appliance}.pt", map_location="cpu")
-    for appliance in accepted
-}
-torch.save(bundle, WORKING / "nilm_model.pt")
 
 print("artifacts in /kaggle/working:")
 for path in sorted(WORKING.glob("nilm*")):

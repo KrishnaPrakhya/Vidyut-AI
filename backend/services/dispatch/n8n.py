@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from typing import Callable
 
 from services.dispatch.outbox import Notification, Outbox
 
 WEBHOOK_ENV_VAR = "N8N_WEBHOOK_URL"
 TIMEOUT_SECONDS = 4.0
+MAX_ATTEMPTS = 3
+RETRY_BASE_SECONDS = 0.25
 
 
 @dataclass
@@ -46,14 +50,23 @@ def _post(url: str, payload: dict) -> None:
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "Idempotency-Key": payload["idempotency_key"],
+        },
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
         response.read()
 
 
-def dispatch(run_id: str, outbox: Outbox, batch_size: int = 50) -> DispatchReport:
+def dispatch(
+    run_id: str,
+    outbox: Outbox,
+    batch_size: int = 50,
+    notification_ids: list[int] | None = None,
+    acknowledge_batch: Callable[[list[int]], None] | None = None,
+) -> DispatchReport:
     notifications = outbox.pending()
     url = webhook_url()
     if url is None:
@@ -62,20 +75,52 @@ def dispatch(run_id: str, outbox: Outbox, batch_size: int = 50) -> DispatchRepor
     delivered = 0
     for start in range(0, len(notifications), batch_size):
         batch: list[Notification] = notifications[start : start + batch_size]
+        rows = []
+        for offset, notification in enumerate(batch):
+            row = notification.to_dict()
+            index = start + offset
+            if notification_ids is not None and index < len(notification_ids):
+                row["notification_id"] = notification_ids[index]
+            rows.append(row)
         payload = {
             "run_id": run_id,
             "batch_index": start // batch_size,
-            "notifications": [n.to_dict() for n in batch],
+            "notifications": rows,
+            "idempotency_key": (
+                f"{run_id}:" + ",".join(
+                    str(row.get("notification_id", start + offset))
+                    for offset, row in enumerate(rows)
+                )
+            ),
         }
-        try:
-            _post(url, payload)
-        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+        error: Exception | None = None
+        for attempt in range(MAX_ATTEMPTS):
+            try:
+                _post(url, payload)
+                error = None
+                break
+            except urllib.error.HTTPError as exc:
+                error = exc
+                if 400 <= exc.code < 500:
+                    break
+            except (urllib.error.URLError, OSError, TimeoutError) as exc:
+                error = exc
+            if attempt + 1 < MAX_ATTEMPTS:
+                time.sleep(RETRY_BASE_SECONDS * (2**attempt))
+        if error is not None:
             return DispatchReport(
                 configured=True,
                 attempted=len(notifications),
                 delivered=delivered,
-                error=str(exc),
+                error=str(error),
             )
+        batch_ids = [
+            int(row["notification_id"])
+            for row in rows
+            if "notification_id" in row
+        ]
+        if acknowledge_batch is not None and batch_ids:
+            acknowledge_batch(batch_ids)
         delivered += len(batch)
         outbox.acknowledge(len(batch))
 

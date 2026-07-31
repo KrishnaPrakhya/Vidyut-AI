@@ -6,8 +6,8 @@ import numpy as np
 
 from services.sim.domain import Household
 from services.sim.scenario import N_TICKS, Scenario
+from services.timebase import TICK_MINUTES
 
-TICK_MINUTES = 15
 BASELINE_THERMAL_STRESS = 0.22
 SHIFTABLE_KINDS = ("water_heater", "ev_charger", "pump", "bess")
 

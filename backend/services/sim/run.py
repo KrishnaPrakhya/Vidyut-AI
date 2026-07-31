@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from services.dispatch.outbox import Outbox
 from services.forecast.naive import DampedTrendForecaster
@@ -39,6 +39,8 @@ class RunResult:
     scenario: str
     seed: int
     arms: dict[str, ArmResult]
+    params: dict[str, float] = field(default_factory=dict)
+    injections: list[Injection] = field(default_factory=list)
 
 
 def make_controller(arm: str, world: World) -> Controller:
@@ -109,6 +111,8 @@ def simulate(
             arm: simulate_arm(arm, scenario, seed, ticks, params, injections, opening_debt)
             for arm in ARMS
         },
+        params=dict(params or {}),
+        injections=list(injections or []),
     )
 
 

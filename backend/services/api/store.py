@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 
 from services.persistence.engine import session_scope
@@ -95,13 +95,20 @@ class RunStore:
                 return
             record.status = "running"
             injections = list(record.injections)
+            scenario = record.scenario
+            seed = record.seed
+            ticks = record.ticks
+            params = dict(record.params)
+            carry_debt = record.carry_debt
         try:
-            opening_debt = self._opening_debt(record)
+            opening_debt, opening_error = self._opening_debt(
+                carry_debt, run_id
+            )
             result = simulate(
-                record.scenario,
-                record.seed,
-                record.ticks,
-                record.params or None,
+                scenario,
+                seed,
+                ticks,
+                params or None,
                 injections or None,
                 opening_debt,
             )
@@ -111,42 +118,52 @@ class RunStore:
                     return
                 current.result = result
                 current.opening_debt_households = len(opening_debt)
-            self._persist(record, result)
+                current.persistence_error = opening_error
+                persistence_record = self._copy(current)
+            persisted, persistence_error = self._persist(persistence_record, result)
             with self._lock:
-                if record.generation == generation:
-                    record.status = "ready"
+                current = self._runs.get(run_id)
+                if current is not None and current.generation == generation:
+                    current.persisted = persisted
+                    if persistence_error is not None:
+                        current.persistence_error = persistence_error
+                    current.status = "ready"
         except Exception as exc:
             with self._lock:
-                if record.generation == generation:
-                    record.status = "failed"
-                    record.error = str(exc)
+                current = self._runs.get(run_id)
+                if current is not None and current.generation == generation:
+                    current.status = "failed"
+                    current.error = str(exc)
         finally:
             event.set()
 
-    def _opening_debt(self, record: RunRecord) -> dict[str, float]:
-        if not record.carry_debt:
-            return {}
+    def _opening_debt(
+        self, carry_debt: bool, run_id: str
+    ) -> tuple[dict[str, float], str | None]:
+        if not carry_debt:
+            return {}, None
         try:
             with session_scope() as session:
-                return load_fairness_balances(
-                    session, exclude_run_id=record.run_id
-                )
+                return load_fairness_balances(session, exclude_run_id=run_id), None
         except Exception as exc:
-            record.persistence_error = f"could not load opening balances: {exc}"
-            return {}
+            return {}, f"could not load opening balances: {exc}"
 
-    def _persist(self, record: RunRecord, result: RunResult) -> None:
+    def _persist(
+        self, record: RunRecord, result: RunResult
+    ) -> tuple[bool, str | None]:
         try:
             with session_scope() as session:
                 if session is None:
-                    return
+                    return False, None
                 save_run(session, record, result)
-            record.persisted = True
+            return True, None
         except Exception as exc:
-            record.persistence_error = str(exc)
+            return False, str(exc)
 
     def get(self, run_id: str) -> RunRecord | None:
-        return self._runs.get(run_id)
+        with self._lock:
+            record = self._runs.get(run_id)
+            return self._copy(record) if record is not None else None
 
     def wait_ready(self, run_id: str, timeout: float = 120.0) -> bool:
         with self._lock:
@@ -172,10 +189,19 @@ class RunStore:
             event = threading.Event()
             self._ready[(run_id, record.generation)] = event
         self._executor.submit(self._compute, run_id, record.generation, event)
-        return record
+        return self.get(run_id)
 
     def list_runs(self) -> list[dict]:
-        return [record.summary_stub() for record in self._runs.values()]
+        with self._lock:
+            return [self._copy(record).summary_stub() for record in self._runs.values()]
+
+    @staticmethod
+    def _copy(record: RunRecord) -> RunRecord:
+        return replace(
+            record,
+            params=dict(record.params),
+            injections=list(record.injections),
+        )
 
     def _evict(self) -> None:
         if len(self._runs) < self._max_runs:

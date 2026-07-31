@@ -40,7 +40,7 @@ consumer-rights amendments, and any future DR framework will expect a defensible
 curtailed, when, at what level, under what reason code, what the measured constraint was, and what
 their standing was relative to comparable consumers.
 
-That is an append-only table with a retention policy, not an in-memory list. It is also the
+That is an immutable audit table with a retention policy, not an in-memory list. It is also the
 artifact behind the incident-report PDF.
 
 ### 3. Measurement and verification needs history by construction
@@ -152,8 +152,8 @@ demo scale; partitioned by run in anything larger.
 |---|---|
 | `control_action` | one row per controller decision — tier, action, level, dt_id, kw, households, reason_code, detail, **and the forecast_kw / safe_limit_kw that justified it** |
 | `household_impact` | one row per household per action — level, kw, minutes, debt weight, debt charged, and `standing_percentile`, the household's debt relative to its DT neighbours at decision time |
-| `fairness_ledger` | **keyed by household_id**, cumulative debt, minutes by level, first/last curtailed |
-| `fairness_ledger_history` | append-only record of every change to the ledger itself |
+| `fairness_ledger` | **keyed by household_id**, cumulative debt, minutes by level, initial/final curtailment time |
+| `fairness_ledger_history` | immutable record of every change to the ledger itself |
 
 `household_impact.standing_percentile` is claim 4 made concrete: it is the number that lets a
 household be told, in one sentence, where they stood relative to their neighbours when the decision

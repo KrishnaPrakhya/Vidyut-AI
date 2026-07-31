@@ -8,10 +8,11 @@ from services.actuation.commands import ActuationCommand
 from services.dispatch.outbox import Notification, Outbox, clock_of
 from services.forecast.base import Forecaster
 from services.sim.controllers.base import ControllerState, ReasonCode, TickEvent
-from services.sim.demand import TICK_MINUTES, natural_demand_kw
+from services.sim.demand import natural_demand_kw
 from services.sim.reconfiguration import apply_reconfiguration, evaluate_reconfiguration
 from services.sim.scenario import N_TICKS
-from services.sim.world import PowerFlowResult, World
+from services.sim.world import PowerFlowResult, TopologyAudit, World
+from services.timebase import TICK_MINUTES
 
 DEBT_WEIGHT = 3.0
 CURTAIL_COOLDOWN_TICKS = 8
@@ -82,8 +83,6 @@ class VidyutController:
             "safe_limit_kw": round(float(safe_limits[row]), 1),
             "rating_kw": round(world.rating_kw(dt_id), 1),
         }
-
-    # Tier 1 - steady state, no comfort impact
 
     def _tier1_shift(self, world: World, tick: int, forecast: np.ndarray) -> None:
         shifted_kw = 0.0
@@ -173,6 +172,20 @@ class VidyutController:
         before = {f: round(v) for f, v in result.feeder_loading_pct.items()}
         apply_reconfiguration(world, candidate)
         after = {f: round(v) for f, v in candidate.result.feeder_loading_pct.items()}
+        detail = (
+            f"closed {candidate.pair.tie_switch_id}, opened switch "
+            f"{candidate.pair.open_switch}; feeder loading {before} to {after}"
+        )
+        world.topology_changes.append(
+            TopologyAudit(
+                tick=tick,
+                tie_switch_closed=candidate.pair.tie_switch_id,
+                switch_opened=candidate.pair.open_switch,
+                losses_kw_before=result.losses_kw,
+                losses_kw_after=candidate.result.losses_kw,
+                detail=detail,
+            )
+        )
 
         self.state.emit(
             tier=1,
@@ -181,13 +194,8 @@ class VidyutController:
             kw=result.losses_kw - candidate.result.losses_kw,
             households=0,
             reason_code=ReasonCode.RECONFIGURATION,
-            detail=(
-                f"closed {candidate.pair.tie_switch_id}, opened switch "
-                f"{candidate.pair.open_switch}; feeder loading {before} to {after}"
-            ),
+            detail=detail,
         )
-
-    # Tier 2 - pre-emptive, device level then meter load limit
 
     def _tier2_preemptive(self, world: World, tick: int, forecast: np.ndarray) -> None:
         for dt_id in world.dt_ids:
@@ -499,8 +507,6 @@ class VidyutController:
             selected += 1
         return cleared, selected
 
-    # Tier 3 - last resort, rotational and standard tier only
-
     def _tier3_last_resort(self, world: World, tick: int, result: PowerFlowResult) -> None:
         for dt_id in world.dt_ids:
             if not world.dt_energized[dt_id]:
@@ -568,6 +574,6 @@ class VidyutController:
                     detail=(
                         f"{dt_id} measured {loading:.0f}% after flexibility exhausted; "
                         f"{selected} standard-tier households rotated off for "
-                        f"{DISCONNECT_TICKS * TICK_MINUTES} minutes, lowest accumulated debt first"
+                        f"{DISCONNECT_TICKS * TICK_MINUTES} minutes, ordered from lowest accumulated debt"
                     ),
                 )

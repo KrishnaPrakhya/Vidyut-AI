@@ -18,16 +18,18 @@ from services.persistence.models import (
     Run,
     RunArmTotal,
     TickMetric,
+    TopologyChange,
 )
 from services.persistence.queries import (
     fairness_leaderboard_rows,
     household_history,
     household_profile,
 )
-from services.persistence.repository import load_fairness_balances, save_run
+from services.persistence.repository import delete_run, load_fairness_balances, save_run
 from services.sim.run import simulate
 
 TICKS = 52
+CREATED_RUN_IDS: list[str] = []
 
 pytestmark = pytest.mark.skipif(
     not check().reachable, reason="no reachable DATABASE_URL; integration tests skipped"
@@ -35,8 +37,12 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(scope="module", autouse=True)
-def schema() -> None:
+def schema():
     create_schema()
+    yield
+    with session_scope() as session:
+        for run_id in reversed(CREATED_RUN_IDS):
+            delete_run(session, run_id)
 
 
 def _persist_run(ticks: int = TICKS) -> str:
@@ -44,9 +50,12 @@ def _persist_run(ticks: int = TICKS) -> str:
     record = RunRecord(
         run_id=run_id, scenario="heatwave", seed=42, ticks=ticks, params={}, status="ready"
     )
-    record.result = simulate("heatwave", 42, ticks)
+    with session_scope() as session:
+        opening_debt = load_fairness_balances(session)
+    record.result = simulate("heatwave", 42, ticks, opening_debt=opening_debt)
     with session_scope() as session:
         save_run(session, record, record.result)
+    CREATED_RUN_IDS.append(run_id)
     return run_id
 
 
@@ -66,7 +75,24 @@ def test_a_run_writes_every_table_of_the_audit_spine() -> None:
         assert _count(session, ControlAction, run_id) > 0
         assert _count(session, HouseholdImpact, run_id) > 0
         assert _count(session, Notification, run_id) > 0
-        assert session.execute(select(func.count()).select_from(Household)).scalar_one() == 4200
+        assert _count(session, TopologyChange, run_id) > 0
+        household_ids = {
+            value
+            for value in session.execute(
+                select(HouseholdImpact.household_id).where(
+                    HouseholdImpact.run_id == run_id
+                )
+            ).scalars()
+        }
+        prefix = next(iter(household_ids)).split("-", 1)[0]
+        assert (
+            session.execute(
+                select(func.count())
+                .select_from(Household)
+                .where(Household.id.like(f"{prefix}-%"))
+            ).scalar_one()
+            == 4200
+        )
 
 
 def test_every_impact_carries_a_reason_and_a_standing() -> None:
@@ -90,16 +116,39 @@ def test_every_impact_carries_a_reason_and_a_standing() -> None:
 def test_standing_is_measured_at_decision_time_not_at_end_of_run() -> None:
     run_id = _persist_run()
     with session_scope() as session:
-        values = {
-            float(value)
-            for value in session.execute(
-                select(HouseholdImpact.standing_percentile).where(
-                    HouseholdImpact.run_id == run_id, HouseholdImpact.arm == "vidyut"
+        impacts = (
+            session.execute(
+                select(HouseholdImpact)
+                .where(
+                    HouseholdImpact.run_id == run_id,
+                    HouseholdImpact.arm == "vidyut",
                 )
-            ).scalars()
-        }
-    assert len(values) > 1, "standing collapsed to a single value; it is not decision-time"
-    assert min(values) == pytest.approx(0.0)
+                .order_by(HouseholdImpact.tick, HouseholdImpact.id)
+            )
+            .scalars()
+            .all()
+        )
+        running_debt = load_fairness_balances(session, exclude_run_id=run_id)
+        prefix = impacts[0].household_id.split("-", 1)[0]
+        members: dict[str, list[str]] = {}
+        for household_id, dt_id in session.execute(
+            select(Household.id, Household.dt_id).where(
+                Household.id.like(f"{prefix}-%")
+            )
+        ):
+            members.setdefault(dt_id, []).append(household_id)
+
+    for impact in impacts:
+        debt = running_debt.get(impact.household_id, 0.0)
+        neighbours = members[impact.dt_id]
+        expected = round(
+            100.0
+            * sum(1 for member in neighbours if running_debt.get(member, 0.0) < debt)
+            / len(neighbours),
+            3,
+        )
+        assert float(impact.standing_percentile) == pytest.approx(expected)
+        running_debt[impact.household_id] = debt + float(impact.debt_charged)
 
 
 def test_critical_tier_is_never_recorded_as_disconnected() -> None:
@@ -117,40 +166,34 @@ def test_critical_tier_is_never_recorded_as_disconnected() -> None:
 
 
 def test_fairness_debt_accumulates_across_runs() -> None:
-    first = _persist_run()
+    _persist_run()
     with session_scope() as session:
         after_first = load_fairness_balances(session)
         total_first = sum(after_first.values())
 
-    second = _persist_run()
+    run_b = _persist_run()
     with session_scope() as session:
         after_second = load_fairness_balances(session)
         assert sum(after_second.values()) > total_first
 
-        household_id = next(
-            row.household_id
-            for row in session.execute(
-                select(FairnessLedgerHistory).where(FairnessLedgerHistory.run_id == second)
-            ).scalars()
-            if row.household_id in after_first
-        )
-        history = (
+        histories = (
             session.execute(
                 select(FairnessLedgerHistory)
-                .where(
-                    FairnessLedgerHistory.household_id == household_id,
-                    FairnessLedgerHistory.run_id.in_((first, second)),
-                )
-                .order_by(FairnessLedgerHistory.recorded_at)
+                .where(FairnessLedgerHistory.run_id == run_b)
+                .order_by(FairnessLedgerHistory.id)
             )
             .scalars()
             .all()
         )
-        assert len(history) == 2
-        assert float(history[1].debt_before) == pytest.approx(float(history[0].debt_after))
-
-        ledger = session.get(FairnessLedger, household_id)
-        assert float(ledger.cumulative_debt_min) == pytest.approx(float(history[1].debt_after))
+        assert histories
+        for history in histories:
+            assert float(history.debt_before) == pytest.approx(
+                after_first.get(history.household_id, 0.0)
+            )
+            ledger = session.get(FairnessLedger, history.household_id)
+            assert float(ledger.cumulative_debt_min) == pytest.approx(
+                float(history.debt_after)
+            )
 
 
 def test_household_profile_and_history_are_queryable() -> None:
@@ -195,6 +238,7 @@ def test_reruns_replace_rather_than_duplicate() -> None:
     run_id = _persist_run()
     with session_scope() as session:
         before = _count(session, DtTickReading, run_id)
+        debt_before = sum(load_fairness_balances(session).values())
 
     record = RunRecord(
         run_id=run_id, scenario="heatwave", seed=42, ticks=TICKS, params={}, status="ready"
@@ -203,3 +247,4 @@ def test_reruns_replace_rather_than_duplicate() -> None:
     with session_scope() as session:
         save_run(session, record, record.result)
         assert _count(session, DtTickReading, run_id) == before
+        assert sum(load_fairness_balances(session).values()) == pytest.approx(debt_before)

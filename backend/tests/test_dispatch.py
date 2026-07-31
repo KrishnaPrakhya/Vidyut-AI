@@ -50,6 +50,34 @@ def test_dispatch_survives_unreachable_webhook(monkeypatch) -> None:
     assert report.error
 
 
+def test_successful_dispatch_acknowledges_notifications(monkeypatch) -> None:
+    monkeypatch.setenv("N8N_WEBHOOK_URL", "https://dispatch.invalid")
+    monkeypatch.setattr("services.dispatch.n8n._post", lambda url, payload: None)
+    outbox = Outbox()
+    outbox.add(_notification())
+
+    report = dispatch("run-1", outbox)
+
+    assert report.status == "delivered"
+    assert report.delivered == 1
+    assert outbox.pending() == []
+
+
+def test_dispatch_includes_persistent_notification_id(monkeypatch) -> None:
+    monkeypatch.setenv("N8N_WEBHOOK_URL", "https://dispatch.invalid")
+    payloads = []
+    monkeypatch.setattr(
+        "services.dispatch.n8n._post", lambda url, payload: payloads.append(payload)
+    )
+    outbox = Outbox()
+    outbox.add(_notification())
+
+    report = dispatch("run-1", outbox, notification_ids=[731])
+
+    assert report.delivered == 1
+    assert payloads[0]["notifications"][0]["notification_id"] == 731
+
+
 def test_simulation_never_calls_the_network() -> None:
     forbidden = ("requests", "httpx", "urllib.request", "aiohttp", "socket")
     for path in SIM_DIR.rglob("*.py"):

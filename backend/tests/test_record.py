@@ -22,6 +22,7 @@ def test_recording_matches_the_websocket_tick_shape() -> None:
         assert set(arm) == {"feeders", "dts", "topology", "metrics", "events"}
         assert len(arm["dts"]) == 60
         assert len(arm["feeders"]) == 3
+        assert isinstance(arm["metrics"]["converged"], bool)
 
 
 def test_recording_is_json_serialisable_and_carries_the_summary() -> None:
@@ -31,3 +32,9 @@ def test_recording_is_json_serialisable_and_carries_the_summary() -> None:
     assert "unserved_kwh" in round_tripped["summary"]["deltas"]
     assert round_tripped["summary"]["arms"]["vidyut"]["critical_uptime_pct"] == 100.0
     assert isinstance(round_tripped["notifications"], list)
+
+
+def test_energy_accounting_closes() -> None:
+    result = simulate("heatwave", 42, TICKS)
+    for arm in result.arms.values():
+        assert arm.totals.energy_balance_error_kwh < 1e-6

@@ -35,11 +35,23 @@ def test_normalised_debt_ranks_against_standing_not_accrual() -> None:
 
 
 def test_opening_debt_is_filtered_to_known_households() -> None:
+    clean = build_world("vidyut", "heatwave", 42)
+    household_id = next(iter(clean.households))
     world = build_world(
-        "vidyut", "heatwave", 42, None, {"ghost-household": 900.0, "F1-DT01-H001": 120.0}
+        "vidyut",
+        "heatwave",
+        42,
+        None,
+        {"ghost-household": 900.0, household_id: 120.0},
     )
     assert "ghost-household" not in world.ledger.opening_debt
-    assert world.ledger.opening_debt["F1-DT01-H001"] == 120.0
+    assert world.ledger.opening_debt[household_id] == 120.0
+
+
+def test_household_identity_changes_with_population_seed() -> None:
+    seed_42 = build_world("vidyut", "heatwave", 42)
+    seed_7 = build_world("vidyut", "heatwave", 7)
+    assert set(seed_42.households).isdisjoint(seed_7.households)
 
 
 def test_metrics_report_this_run_only_not_carried_debt() -> None:

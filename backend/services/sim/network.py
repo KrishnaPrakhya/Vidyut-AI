@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 import pandapower as pp
@@ -40,6 +41,7 @@ class NetworkContext:
     tie_switches: dict[str, TieSwitch]
     tie_switch_pp_idx: dict[str, int]
     tie_switch_bus: dict[str, tuple[int, int]]
+    switch_graph: Any | None = field(default=None, repr=False)
 
 
 def _recursive_tree_parents(n: int, rng: np.random.Generator) -> list[int]:

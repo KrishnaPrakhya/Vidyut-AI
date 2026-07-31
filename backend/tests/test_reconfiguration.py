@@ -54,15 +54,15 @@ def test_every_candidate_pair_is_radial_when_applied() -> None:
 
 
 def test_selected_candidate_satisfies_all_constraints() -> None:
-    world, result = _world_at_peak()
+    world, result = _world_at_peak(tick=49)
     candidate = evaluate_reconfiguration(world, result)
-    if candidate is None:
-        return
+    assert candidate is not None
 
     assert candidate.result.converged
     assert candidate.result.vm_pu_min >= VM_MIN_PU
     assert candidate.result.vm_pu_max <= VM_MAX_PU
     assert float(np.nanmax(candidate.result.line_loading_pct)) <= MAX_LOADING_PCT
+    assert float(np.nanmax(candidate.result.trafo_loading_pct)) <= MAX_LOADING_PCT
 
 
 def test_evaluation_leaves_switch_state_untouched() -> None:

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from services.sim.controllers.base import ControllerState, ReasonCode, TickEvent
 from services.sim.world import PowerFlowResult, World
+from services.timebase import TICK_MINUTES
 
 OVERLOAD_PCT = 100.0
 TRIP_AFTER_CONSECUTIVE_TICKS = 2
@@ -63,7 +64,7 @@ class BaselineController:
             end_tick = min(start_tick + DE_ENERGISE_TICKS, world.simulation_ticks)
             if end_tick <= start_tick:
                 continue
-            minutes = (end_tick - start_tick) * 15.0
+            minutes = (end_tick - start_tick) * TICK_MINUTES
             world.scheduled_outages.setdefault(dt_id, []).append((start_tick, end_tick))
             world.dt_reenergize_tick[dt_id] = end_tick
             self.consecutive_overload[dt_id] = 0

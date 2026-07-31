@@ -10,8 +10,6 @@ DAMPING = 0.75
 
 @dataclass
 class DampedTrendForecaster:
-    """Stand-in until ml/models/forecast_eval.json exists. Genuinely imperfect by design."""
-
     n_dt: int
     name: str = "damped_trend"
     history: list[np.ndarray] = field(default_factory=list)

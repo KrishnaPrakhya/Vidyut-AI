@@ -39,7 +39,7 @@
       "fridge": 0.4812
     },
     "max_gap_bridged_minutes": 5,
-    "gaps_are_masked_not_interpolated": true
+    "gaps_are_masked_not_interpolated": false
   },
   "split": {
     "train": {
@@ -58,7 +58,7 @@
       "minutes": 25301
     }
   },
-  "role": "observability only: estimates the deferrable share of household load and verifies realised reduction after an event; issues no control commands",
+  "role": "observability: estimates the deferrable share of household load and verifies realised reduction after an event; issues no control commands",
   "trained_at": "2026-07-31T07:11:59+00:00",
   "seed": 42
 }

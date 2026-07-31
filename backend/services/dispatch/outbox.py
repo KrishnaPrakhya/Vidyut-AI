@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 
-
-def clock_of(tick: int) -> str:
-    minutes = tick * 15
-    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+from services.timebase import clock_of
 
 
 @dataclass

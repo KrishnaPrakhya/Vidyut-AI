@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import pandapower as pp
+from pandapower.auxiliary import LoadflowNotConverged
 
 from services.actuation.commands import ActuationState
 from services.sim.demand import DemandModel, build_demand_model, design_day_peak_kw, natural_demand_kw
@@ -13,8 +14,8 @@ from services.sim.network import NetworkContext, build_network, resize_transform
 from services.sim.population import build_population, population_key
 from services.sim.rng import make_rngs
 from services.sim.scenario import Scenario, load_scenario
+from services.timebase import TICK_HOURS, TICK_MINUTES
 
-TICK_HOURS = 0.25
 SAFE_LIMIT_FRACTION = 0.90
 
 
@@ -28,6 +29,16 @@ class PowerFlowResult:
     feeder_loading_pct: dict[str, float]
     feeder_losses_kw: dict[str, float]
     losses_kw: float
+
+
+@dataclass
+class TopologyAudit:
+    tick: int
+    tie_switch_closed: str
+    switch_opened: int
+    losses_kw_before: float
+    losses_kw_after: float
+    detail: str
 
 
 @dataclass
@@ -56,6 +67,7 @@ class World:
     critical_household_dark_minutes: float = 0.0
     homes_dark_minutes: float = 0.0
     nonconverged_ticks: int = 0
+    topology_changes: list[TopologyAudit] = field(default_factory=list)
 
     @property
     def dt_ids(self) -> list[str]:
@@ -145,7 +157,7 @@ def solve_power_flow(world: World) -> PowerFlowResult:
     net = world.ctx.net
     try:
         pp.runpp(net, numba=False)
-    except Exception:
+    except LoadflowNotConverged:
         n_trafo, n_line = len(net.trafo), len(net.line)
         return PowerFlowResult(
             converged=False,
@@ -213,7 +225,7 @@ def apply_loads(world: World, t: int) -> tuple[np.ndarray, np.ndarray, int]:
     if disconnected:
         rows = np.array([world.demand.row_of[h] for h in disconnected], dtype=int)
         world.unserved_kwh += float(served[rows].sum()) * TICK_HOURS
-        world.homes_dark_minutes += 15.0 * len(disconnected)
+        world.homes_dark_minutes += TICK_MINUTES * len(disconnected)
         homes_dark += len(disconnected)
         served[rows] = 0.0
 
@@ -227,8 +239,8 @@ def apply_loads(world: World, t: int) -> tuple[np.ndarray, np.ndarray, int]:
             h for h in world.ctx.dts[dt_id].households if h not in disconnected
         ]
         world.unserved_kwh += float(dt_kw[row]) * TICK_HOURS
-        world.homes_dark_minutes += 15.0 * len(dark_households)
-        world.critical_household_dark_minutes += 15.0 * sum(
+        world.homes_dark_minutes += TICK_MINUTES * len(dark_households)
+        world.critical_household_dark_minutes += TICK_MINUTES * sum(
             1 for h in dark_households if world.households[h].tier == "critical"
         )
         homes_dark += len(dark_households)

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from services.sim.metrics import ArmSnapshot, RunTotals
 from services.sim.scenario import N_TICKS
+from services.timebase import clock_of
 
 
 class ScenarioParams(BaseModel):
@@ -42,9 +43,10 @@ class InjectRequest(BaseModel):
     dt_id: str | None = None
 
 
-def clock_of(tick: int) -> str:
-    minutes = tick * 15
-    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+class DeliveryReceiptRequest(BaseModel):
+    status: Literal["queued", "dispatched", "delivered", "failed"]
+    provider_message_id: str | None = Field(default=None, max_length=128)
+    error: str | None = Field(default=None, max_length=2000)
 
 
 def arm_payload(snapshot: ArmSnapshot) -> dict:

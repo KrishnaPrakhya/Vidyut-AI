@@ -4,16 +4,18 @@ import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Iterator
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
-from services.persistence.models import Base
-
 DATABASE_URL_ENV_VAR = "DATABASE_URL"
 CONNECT_TIMEOUT_SECONDS = 5
+ALEMBIC_CONFIG = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 
 @dataclass
@@ -83,9 +85,9 @@ def create_schema() -> DatabaseStatus:
     status = check()
     if not status.reachable:
         return status
-    engine = get_engine()
-    assert engine is not None
-    Base.metadata.create_all(engine)
+    config = Config(str(ALEMBIC_CONFIG))
+    config.set_main_option("sqlalchemy.url", database_url() or "")
+    command.upgrade(config, "head")
     return status
 
 

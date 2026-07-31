@@ -11,6 +11,7 @@ from services.persistence.models import (
     HouseholdImpact,
     Run,
 )
+from services.timebase import clock_of
 
 LEVEL_SENTENCE = {
     "price_signal": "a peak tariff was broadcast to your area; no action was required of you",
@@ -101,7 +102,7 @@ def household_history(
     events = []
     for impact, action, run in rows:
         minutes = float(impact.minutes)
-        clock = f"{impact.tick * 15 // 60:02d}:{impact.tick * 15 % 60:02d}"
+        clock = clock_of(impact.tick)
         events.append(
             {
                 "run_id": impact.run_id,
