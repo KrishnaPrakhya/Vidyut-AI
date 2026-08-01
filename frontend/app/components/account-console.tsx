@@ -50,11 +50,11 @@ export function ProfileConsole() {
       </section>
       <section className="account-panel account-form-panel">
         <div className="panel-title"><div><p className="account-kicker">Editable details</p><h2>Profile information</h2></div><span>All changes logged</span></div>
-        <form onSubmit={(event) => { event.preventDefault(); setSaved(true); }}>
+        <form onChange={() => setSaved(false)} onSubmit={(event) => { event.preventDefault(); setSaved(true); }}>
           <label>Display name<input defaultValue="Operator" /></label>
           <label>Work email<input type="email" defaultValue="operator@vidyut.grid" /></label>
           <label>Response region<select defaultValue="south"><option value="south">South distribution</option><option value="central">Central distribution</option><option value="north">North distribution</option></select></label>
-          <div className="form-actions"><button type="submit">{saved ? "Saved to operator record" : "Save changes"}</button>{saved && <span role="status">✓ Changes recorded</span>}</div>
+          <div className="form-actions"><button type="submit">{saved ? "Saved to operator record" : "Save changes"}</button>{saved && <span role="status" aria-live="polite">✓ Changes recorded</span>}</div>
         </form>
       </section>
     </div>
@@ -79,7 +79,7 @@ export function SettingsConsole() {
     <div className="account-heading"><div><p className="account-kicker">Workspace preferences</p><h1>System settings</h1><p>Choose how the command environment notifies and supports you.</p></div><span className="settings-version">Console v1.0 / Stable</span></div>
     <div className="settings-layout">
       <section className="account-panel preferences-panel"><div className="panel-title"><div><p className="account-kicker">Signal control</p><h2>Notifications</h2></div><span>Personal only</span></div>
-        {rows.map(([title, description, checked, setChecked]) => <label className="setting-row" key={title}><span><strong>{title}</strong><small>{description}</small></span><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} /><i aria-hidden="true" /></label>)}
+        {rows.map(([title, description, checked, setChecked]) => <label className="setting-row" key={title}><span><strong>{title}</strong><small>{description}</small></span><input type="checkbox" checked={checked} onChange={(event) => { setChecked(event.target.checked); setSaved(false); }} /><i aria-hidden="true" /></label>)}
       </section>
       <section className="account-panel security-panel"><div className="panel-title"><div><p className="account-kicker">Access protection</p><h2>Session security</h2></div><span className="security-state">Protected</span></div>
         <div className="security-item"><i>✓</i><div><strong>Multi-factor authentication</strong><small>Authenticator app confirmed</small></div><button type="button">Manage</button></div>
@@ -87,6 +87,6 @@ export function SettingsConsole() {
         <div className="security-note"><i>●</i> Identity and preference changes are appended to the operator audit record.</div>
       </section>
     </div>
-    <section className="account-panel defaults-panel"><div><p className="account-kicker">Operating defaults</p><h2>Command-center display</h2><p>These defaults apply when opening a new operational session.</p></div><div className="defaults-controls"><label>Default scenario<select defaultValue="heatwave"><option value="heatwave">Heatwave</option><option value="normal">Normal day</option><option value="ev">EV surge</option></select></label><button type="button" onClick={() => setSaved(true)}>{saved ? "Preferences saved" : "Save preferences"}</button></div></section>
+    <section className="account-panel defaults-panel"><div><p className="account-kicker">Operating defaults</p><h2>Command-center display</h2><p>These defaults apply when opening a new operational session.</p></div><div className="defaults-controls"><label>Default scenario<select defaultValue="heatwave" onChange={() => setSaved(false)}><option value="heatwave">Heatwave</option><option value="normal">Normal day</option><option value="ev">EV surge</option></select></label><button type="button" onClick={() => setSaved(true)}>{saved ? "Preferences saved" : "Save preferences"}</button></div></section>
   </AccountFrame>;
 }
