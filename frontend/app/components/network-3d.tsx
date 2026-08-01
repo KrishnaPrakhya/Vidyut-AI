@@ -112,10 +112,12 @@ function Locality({ placed, intervened, onHover, onSelect, selected }: { placed:
   const body = useRef<THREE.Mesh>(null);
   const ring = useRef<THREE.Mesh>(null);
   const fan = useRef<THREE.Mesh>(null);
+  const servicePulse = useRef<THREE.Mesh>(null);
   const { dt, position, side } = placed;
   const state = stateOf(dt.loading_pct, dt.energized);
   const target = useMemo(() => new THREE.Color(PALETTE[state]), [state]);
   const darkRatio = Math.min(1, dt.households_dark / 70);
+  const houseOffsets: [number, number][] = [[-side * .48, -.31], [-side * .78, -.06], [-side * .55, .25], [-side * .86, .37]];
 
   useFrame((clock) => {
     if (body.current) {
@@ -132,6 +134,11 @@ function Locality({ placed, intervened, onHover, onSelect, selected }: { placed:
       ring.current.scale.setScalar(1 + alarm * .45);
     }
     if (fan.current) fan.current.rotation.z = clock.clock.elapsedTime * (2 + dt.loading_pct / 18);
+    if (servicePulse.current) {
+      const travel = (clock.clock.elapsedTime * .15 + position[2] * .05) % 1;
+      servicePulse.current.position.x = -side * (1.12 - travel * 1.08);
+      (servicePulse.current.material as THREE.MeshBasicMaterial).opacity = dt.energized ? Math.sin(travel * Math.PI) * .9 : 0;
+    }
   });
 
   return <group position={position} onPointerOver={(event) => { event.stopPropagation(); onHover(dt); document.body.style.cursor = "pointer"; }} onPointerOut={() => { onHover(null); document.body.style.cursor = "auto"; }} onClick={(event) => { event.stopPropagation(); onSelect(dt.id); }}>
@@ -140,7 +147,9 @@ function Locality({ placed, intervened, onHover, onSelect, selected }: { placed:
     <mesh position={[0, .75, 0]}><cylinderGeometry args={[.045, .045, .35, 8]} /><meshStandardMaterial color="#73847b" metalness={.6} /></mesh>
     <mesh ref={fan} position={[.18, .39, .18]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.11, .025, 6, 12]} /><meshStandardMaterial color="#9fb2a7" metalness={.7} /></mesh>
     <mesh ref={ring} position={[0, .035, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[.43, .58, 28]} /><meshBasicMaterial transparent opacity={0} side={THREE.DoubleSide} /></mesh>
-    {[[-side * .48, -.31], [-side * .78, -.06], [-side * .55, .25], [-side * .86, .37]].map(([offsetX, offsetZ], index) => <House key={index} x={offsetX} z={offsetZ} lit={dt.energized && index / 4 >= darkRatio} selected={selected} />)}
+    <mesh position={[-side * .56, .055, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}><planeGeometry args={[.035, 1.12]} /><meshBasicMaterial color={PALETTE[state]} transparent opacity={dt.energized ? .5 : .14} /></mesh>
+    <mesh ref={servicePulse} position={[-side * 1.1, .064, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}><planeGeometry args={[.09, .2]} /><meshBasicMaterial color={PALETTE.accent} transparent opacity={0} /></mesh>
+    {houseOffsets.map(([offsetX, offsetZ], index) => <group key={index}><mesh position={[offsetX / 2, .05, offsetZ / 2]} rotation={[-Math.PI / 2, Math.atan2(offsetX, offsetZ), 0]}><planeGeometry args={[.018, Math.hypot(offsetX, offsetZ)]} /><meshBasicMaterial color={dt.energized ? "#7cab79" : "#293b32"} transparent opacity={.5} /></mesh><House x={offsetX} z={offsetZ} lit={dt.energized && index / 4 >= darkRatio} selected={selected} /></group>)}
     {selected && <Html center position={[0, 1.2, 0]} distanceFactor={13}><div className="twin-selected-tag"><span>{dt.id}</span><strong>{dt.loading_pct.toFixed(0)}%</strong></div></Html>}
   </group>;
 }
@@ -150,7 +159,7 @@ function Feeder({ x, loading, id }: { x: number; loading: number; id: string }) 
   const state = stateOf(loading, true);
   useFrame((clock) => {
     if (!flow.current) return;
-    const t = (clock.clock.elapsedTime * (.14 + loading / 180)) % 1;
+    const t = (clock.clock.elapsedTime * (.045 + loading / 950)) % 1;
     flow.current.position.z = -5.5 + t * 11;
     (flow.current.material as THREE.MeshBasicMaterial).opacity = Math.sin(t * Math.PI) * .8;
   });
@@ -184,16 +193,16 @@ function CriticalFacility({ uptime }: { uptime: number }) {
   </group>;
 }
 
-function CameraRig({ sceneIndex, presentation }: { sceneIndex: number; presentation: boolean }) {
+function CameraRig({ sceneIndex }: { sceneIndex: number }) {
   const { camera, mouse } = useThree();
   const target = useRef(new THREE.Vector3());
-  const paths: [number, number, number][] = [[0, 11.8, 15.5], [-5.8, 8.2, 13.2], [6.8, 7.3, 12.4], [3.5, 6, 9.2], [-4.8, 5.8, 9.8], [0, 10.8, 14.2], [4.4, 8.5, 11.4], [0, 12.5, 16.2]];
+  const paths: [number, number, number][] = [[1.2, 10.8, 14.4], [-3.9, 9.4, 13.6], [4.6, 9.2, 13.4], [2.8, 8.1, 11.8], [-3.5, 8.2, 12.2], [.8, 10.5, 14.2], [3.5, 8.8, 12.8], [1.2, 11.2, 15]];
   useFrame((clock, delta) => {
     const p = paths[sceneIndex % paths.length];
-    const breath = presentation ? Math.sin(clock.clock.elapsedTime * .45) * .18 : 0;
+    const breath = Math.sin(clock.clock.elapsedTime * .32) * .08;
     const desired = new THREE.Vector3(p[0] + mouse.x * .35, p[1] + breath + mouse.y * .2, p[2]);
     camera.position.lerp(desired, 1 - Math.exp(-delta * 1.1));
-    target.current.lerp(new THREE.Vector3(0, .25, sceneIndex === 3 ? 1.4 : 0), 1 - Math.exp(-delta * 1.4));
+    target.current.lerp(new THREE.Vector3(-1.65, .22, sceneIndex === 3 ? .9 : 0), 1 - Math.exp(-delta * 1.3));
     camera.lookAt(target.current);
   });
   return null;
@@ -201,22 +210,23 @@ function CameraRig({ sceneIndex, presentation }: { sceneIndex: number; presentat
 
 function Scene({ snapshot, activeTargets, selectedDt, onSelect, onHover, reduced, presentation, sceneIndex }: { snapshot: ArmSnapshot; activeTargets: Set<string>; selectedDt: string; onSelect: (id: string) => void; onHover: (dt: DtSnapshot | null) => void; reduced: boolean; presentation: boolean; sceneIndex: number }) {
   const placed = useMemo(() => layout(snapshot.dts), [snapshot.dts]);
+  const presentationPlaced = presentation ? placed.filter((_, index) => index % 4 === 0) : placed;
   return <>
-    <fog attach="fog" args={[sceneIndex === 3 ? "#5b5848" : "#b9c5c2", 12, 34]} />
-    <ambientLight intensity={.98} />
-    <hemisphereLight args={["#e6efeb", "#123324", .85]} />
-    <directionalLight position={[4, 12, 5]} intensity={1.75} castShadow />
+    <fog attach="fog" args={[sceneIndex === 3 ? "#4f493e" : "#334039", 17, 42]} />
+    <ambientLight intensity={.82} />
+    <hemisphereLight args={["#c8d5cf", "#102b1d", .72]} />
+    <directionalLight position={[5, 13, 7]} intensity={1.45} />
     <pointLight position={[0, 5, -6]} intensity={30} color={PALETTE.accent} distance={18} />
     <Substation />
     <CriticalFacility uptime={snapshot.metrics.critical_uptime_pct} />
     <CivicAssets />
     <CityLife />
     {FEEDER_X.map((x, index) => <Feeder key={x} x={x} loading={snapshot.feeders[index]?.loading_pct ?? 0} id={snapshot.feeders[index]?.id ?? `F${index + 1}`} />)}
-    {placed.map((item) => <Locality key={item.dt.id} placed={item} intervened={activeTargets.has(item.dt.id)} selected={selectedDt === item.dt.id} onSelect={onSelect} onHover={onHover} />)}
+    {presentationPlaced.map((item) => <Locality key={item.dt.id} placed={item} intervened={activeTargets.has(item.dt.id)} selected={selectedDt === item.dt.id} onSelect={onSelect} onHover={onHover} />)}
     <CityGround />
     <gridHelper args={[29, 29, "#183127", "#102019"]} position={[0, -.02, 0]} />
-    <CameraRig sceneIndex={sceneIndex} presentation={presentation} />
-    <OrbitControls enablePan={false} enableDamping dampingFactor={.06} minDistance={8} maxDistance={24} minPolarAngle={.25} maxPolarAngle={Math.PI / 2.18} autoRotate={!reduced} autoRotateSpeed={presentation ? .18 : .07} />
+    {presentation && <CameraRig sceneIndex={sceneIndex} />}
+    {!presentation && <OrbitControls enablePan={false} enableDamping dampingFactor={.06} minDistance={8} maxDistance={24} minPolarAngle={.25} maxPolarAngle={Math.PI / 2.18} autoRotate={!reduced} autoRotateSpeed={.07} />}
   </>;
 }
 
@@ -226,7 +236,7 @@ export function Network3D({ snapshot, label, selectedDt, onSelect, activeTargets
   const selected = snapshot.dts.find((dt) => dt.id === selectedDt);
   const inspected = hovered ?? selected;
   return <div className={`twin-stage ${presentation ? "presentation" : ""}`}>
-    <Canvas camera={{ position: [0, 11.8, 15.5], fov: 43 }} dpr={[1, 1.2]} gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}>
+    <Canvas camera={{ position: [1.2, 10.8, 14.4], fov: 39 }} dpr={[1, 1.2]} gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}>
       <Scene snapshot={snapshot} activeTargets={activeTargets} selectedDt={selectedDt} onSelect={onSelect} onHover={setHovered} reduced={reduced} presentation={presentation} sceneIndex={sceneIndex} />
     </Canvas>
     <div className="twin-readout">{inspected ? <><span>{inspected.energized ? "LOCALITY ENERGISED" : "LOCALITY OFFLINE"}</span><strong>{inspected.id}</strong><small>{inspected.loading_pct.toFixed(1)}% of limit · {inspected.households_dark} homes dark</small></> : <><span>SPATIAL NETWORK</span><strong>{label}</strong><small>Select a locality to inspect its transformer and homes.</small></>}</div>

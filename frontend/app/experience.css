@@ -540,18 +540,18 @@ body { min-width: 320px; }
 /* Reference direction: architectural model on a soft operational canvas. */
 .landing { background: #c8d0d1; }
 .problem-section { background: radial-gradient(circle at 86% 10%, rgba(184, 217, 101, .08), transparent 32%), linear-gradient(135deg, #0b1711 0%, #102019 100%); }
-.landing-hero { background: radial-gradient(circle at 70% 18%, #eef3f1 0, #cbd3d4 43%, #6f7a7a 100%); }
-.landing-hero::before { background: linear-gradient(90deg, rgba(18, 31, 29, .61) 0%, rgba(28, 43, 40, .34) 28%, rgba(203, 212, 213, .03) 58%, rgba(203, 212, 213, 0) 100%), linear-gradient(0deg, rgba(13, 26, 23, .3), transparent 36%); }
+.landing-hero { background: radial-gradient(circle at 70% 8%, #6d7772 0, #35423c 38%, #0a1510 100%); }
+.landing-hero::before { background: linear-gradient(90deg, rgba(8, 19, 15, .78) 0%, rgba(11, 25, 20, .52) 31%, rgba(16, 29, 24, .12) 48%, transparent 68%), linear-gradient(0deg, rgba(7, 17, 14, .34), transparent 42%); }
 .landing-nav { color: #edf5ef; background: linear-gradient(180deg, rgba(12, 25, 22, .35), transparent); border-bottom-color: rgba(255, 255, 255, .13); }
 .landing-nav nav a, .landing-brand small { color: rgba(239, 247, 243, .72); }
 .landing-hero > .hero-twin, .hero-twin .twin-stage { background: transparent; }
-.hero-copy { width: min(650px, 56vw); padding-top: 132px; }
+.hero-copy { width: min(560px, 38vw); margin-left: 0; padding-top: 132px; transform: none; }
 .system-line { color: var(--lime); font-weight: 800; text-shadow: 0 1px 12px rgba(7, 17, 14, .55); }
 .system-line strong { display: none; }
 .system-line i { background: var(--lime); box-shadow: 0 0 0 5px rgba(201, 240, 77, .16); }
-.hero-copy h1 { max-width: 760px; margin-block: 35px 24px; color: #f7faf6; font-size: clamp(62px, 6.6vw, 110px); line-height: .88; letter-spacing: -.078em; text-shadow: 0 5px 30px rgba(8, 20, 17, .2); }
+.hero-copy h1 { max-width: 560px; margin-block: 35px 24px; color: #f7faf6; font-size: clamp(52px, 4.8vw, 82px); line-height: .92; letter-spacing: -.065em; text-shadow: 0 5px 30px rgba(8, 20, 17, .26); }
 .hero-copy h1 em { display: inline-block; color: var(--lime); font-family: inherit; font-style: normal; font-weight: 600; }
-.hero-copy > p { max-width: 560px; color: rgba(245, 249, 245, .75); font-size: clamp(16px, 1.45vw, 21px); line-height: 1.55; }
+.hero-copy > p { max-width: 490px; color: rgba(245, 249, 245, .78); font-size: clamp(16px, 1.2vw, 19px); line-height: 1.62; }
 .hero-actions { margin-top: 38px; }.hero-actions button { min-height: 55px; padding-inline: 24px; font-size: 13px; text-transform: none; letter-spacing: -.01em; }.hero-primary { color: #07110e; background: var(--lime); border-color: var(--lime); }.hero-secondary { background: rgba(6, 34, 23, .55); border-color: rgba(230, 245, 235, .25); }
 .hero-proof { display: none; }
 .hero-twin-head, .hero-model-key { display: none; }
@@ -560,7 +560,7 @@ body { min-width: 320px; }
 .hero-demo-controls button { min-height: 27px; color: var(--lime); background: transparent; border: 0; border-right: 1px solid rgba(240, 248, 242, .25); border-radius: 0; font-size: 10px; }.hero-demo-controls button:last-child { border-right: 0; }.hero-demo-controls button:hover { color: #07110e; background: var(--lime); }
 .presentation-mode .hero-copy, .presentation-mode .hero-model-key, .presentation-mode .hero-demo-controls { opacity: 1; pointer-events: auto; }
 
-@media (max-width: 720px) { .landing-hero { background: radial-gradient(circle at 72% 12%, #e8eeee, #8d9998 70%, #566261); }.hero-copy { width: 100%; padding-top: 110px; }.hero-copy h1 { font-size: clamp(53px, 14vw, 76px); }.hero-copy > p { font-size: 16px; }.hero-demo-controls { left: 16px; bottom: 25px; }.hero-demo-controls button { font-size: 8px; padding-inline: 5px; } }
+@media (max-width: 720px) { .landing-hero { background: radial-gradient(circle at 72% 12%, #59655f, #26362e 58%, #0a1510); }.hero-copy { width: 100%; padding-top: 110px; }.hero-copy h1 { font-size: clamp(53px, 14vw, 76px); }.hero-copy > p { font-size: 16px; }.hero-demo-controls { left: 16px; bottom: 25px; }.hero-demo-controls button { font-size: 8px; padding-inline: 5px; } }
 
 /* Traditional Grid vs Vidyut: synchronized electrical topology simulation. */
 .legacy-outcome-pair, .blackout-comparison > .protected-service { display: none; }
