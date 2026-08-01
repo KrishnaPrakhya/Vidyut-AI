@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from services.sim.metrics import ArmSnapshot, RunTotals
 from services.sim.scenario import N_TICKS
@@ -45,6 +45,34 @@ class InjectRequest(BaseModel):
 
 class DeliveryReceiptRequest(BaseModel):
     status: Literal["queued", "dispatched", "delivered", "failed"]
+    provider_message_id: str | None = Field(default=None, max_length=128)
+    error: str | None = Field(default=None, max_length=2000)
+
+
+class OperatorDigestRequest(BaseModel):
+    recipient_email: str = Field(min_length=3, max_length=254)
+    consent: Literal[True]
+
+    @field_validator("recipient_email")
+    @classmethod
+    def valid_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        local, separator, domain = normalized.rpartition("@")
+        if (
+            separator != "@"
+            or not local
+            or "." not in domain
+            or domain.startswith(".")
+            or domain.endswith(".")
+            or any(character.isspace() for character in normalized)
+        ):
+            raise ValueError("enter a valid operator email address")
+        return normalized
+
+
+class DigestDeliveryReceiptRequest(BaseModel):
+    notification_ids: list[int] = Field(min_length=1, max_length=500)
+    status: Literal["delivered", "failed"]
     provider_message_id: str | None = Field(default=None, max_length=128)
     error: str | None = Field(default=None, max_length=2000)
 

@@ -49,6 +49,9 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
   const [events, setEvents] = useState<EventResponse | null>(null);
   const [notifications, setNotifications] = useState<NotificationResponse | null>(null);
   const [dispatchResult, setDispatchResult] = useState<string | null>(null);
+  const [dispatchPhase, setDispatchPhase] = useState<"idle" | "accepted" | "delivered" | "failed">("idle");
+  const [operatorEmail, setOperatorEmail] = useState("");
+  const [digestConsent, setDigestConsent] = useState(false);
   const [frames, setFrames] = useState<TickFrame[]>([]);
   const [completedRecording, setCompletedRecording] = useState<Recording | null>(null);
   const [cursor, setCursor] = useState(0);
@@ -114,6 +117,7 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
     setEvents(null);
     setNotifications(null);
     setDispatchResult(null);
+    setDispatchPhase("idle");
     setFrames([]);
     setCompletedRecording(null);
     setCursor(0);
@@ -169,24 +173,59 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
 
   async function dispatchNotifications() {
     if (!runId || !notifications?.count) return;
-    if (!window.confirm(`Send ${notifications.count} pending notifications through the configured dispatch adapter?`)) return;
+    if (!operatorEmail.trim() || !digestConsent) {
+      setError("Enter the operator email and confirm one-time use before sending.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const result = await api<{ delivered: number; failed: number; dry_run: boolean }>(
+      const result = await api<{ status: string; accepted: boolean; configured: boolean; notification_count: number; tracking: boolean; error: string | null }>(
         `/api/runs/${runId}/notifications/dispatch`,
-        { method: "POST" },
+        {
+          method: "POST",
+          body: JSON.stringify({ recipient_email: operatorEmail, consent: true }),
+        },
       );
-      setDispatchResult(
-        result.dry_run
-          ? `${result.delivered} notifications validated in dry-run mode`
-          : `${result.delivered} delivered · ${result.failed} failed`,
-      );
+      if (!result.accepted) {
+        setDispatchPhase("failed");
+        setDispatchResult(result.error ?? "The n8n operator workflow is not configured.");
+        return;
+      }
+      setDispatchPhase("accepted");
+      setDispatchResult(`n8n accepted one simulated operator digest covering ${result.notification_count} queued broadcasts.`);
+      setOperatorEmail("");
+      setDigestConsent(false);
+      if (result.tracking) void pollDelivery(runId);
     } catch (caught) {
+      setDispatchPhase("failed");
       setError(caught instanceof Error ? caught.message : "Dispatch failed");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function pollDelivery(id: string) {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      try {
+        const delivery = await api<{ status: string; delivered_at: string | null; error: string | null }>(`/api/runs/${id}/notifications/delivery`);
+        if (delivery.status === "delivered") {
+          const when = delivery.delivered_at ? new Date(delivery.delivered_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "now";
+          setDispatchPhase("delivered");
+          setDispatchResult(`Operator digest delivered at ${when}. The address was not retained by Vidyut.`);
+          return;
+        }
+        if (delivery.status === "failed") {
+          setDispatchPhase("failed");
+          setDispatchResult(delivery.error ?? "The email provider reported a delivery failure.");
+          return;
+        }
+      } catch {
+        return;
+      }
+    }
+    setDispatchResult("n8n accepted the digest. Delivery confirmation is still pending.");
   }
 
   const comparison = summary
@@ -229,7 +268,7 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
       {!summary ? <section className="preflight-grid">
         <article><span>01</span><strong>Identical demand</strong><p>Both arms receive the same network, households, weather and seed.</p></article>
         <article><span>02</span><strong>Different control</strong><p>The baseline protects equipment reactively. Vidyut can forecast and target flexibility.</p></article>
-        <article><span>03</span><strong>Auditable output</strong><p>Events, notifications, fairness debt and a signed PDF are retained with the run.</p></article>
+        <article><span>03</span><strong>Auditable output</strong><p>Events, notifications, fairness debt and a generated PDF are retained with the run.</p></article>
       </section> : <>
         <section className="results-section">
           <div className="section-heading"><div><p className="eyebrow">Run outcome</p><h2>One demand profile. Two futures.</h2></div><div className="run-identity"><span>Run ID</span><code>{runId}</code></div></div>
@@ -297,11 +336,15 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
           </article>
 
           <article className="panel notification-panel">
-            <div className="panel-heading"><div><span>Notification outbox</span><strong>{notifications?.count ?? 0} messages ready</strong></div><span className="source-chip operational">operational</span></div>
+            <div className="panel-heading"><div><span>Operator automation</span><strong>{notifications?.count ?? 0} broadcasts summarised</strong></div><span className="source-chip operational">n8n</span></div>
             {notifications?.notifications.length ? <>
-              <div className="message-preview"><span>{notifications.notifications[0].clock} · {titleCase(notifications.notifications[0].event_type)}</span><p>{notifications.notifications[0].message}</p></div>
-              <button className="secondary-action button" onClick={dispatchNotifications} disabled={busy}>Dispatch pending notifications</button>
-              {dispatchResult && <p className="success-note">{dispatchResult}</p>}
+              <div className="message-preview"><span>Resident preview only · not sent · {notifications.notifications[0].clock}</span><p>{notifications.notifications[0].message}</p></div>
+              <div className="operator-digest-form">
+                <label>Operator email<input type="email" autoComplete="email" placeholder="operator@example.com" value={operatorEmail} onChange={(event) => setOperatorEmail(event.target.value)} disabled={busy || dispatchPhase === "accepted" || dispatchPhase === "delivered"} /></label>
+                <label className="consent-row"><input type="checkbox" checked={digestConsent} onChange={(event) => setDigestConsent(event.target.checked)} disabled={busy || dispatchPhase === "accepted" || dispatchPhase === "delivered"} /><span>Use this address once for this simulated digest. Vidyut will not store it.</span></label>
+                <button className="secondary-action button" onClick={dispatchNotifications} disabled={busy || !operatorEmail.trim() || !digestConsent || dispatchPhase === "accepted" || dispatchPhase === "delivered"}>{busy ? "Sending to n8n…" : "Send simulated operator digest"}</button>
+              </div>
+              {dispatchResult && <p className={`delivery-state ${dispatchPhase}`} aria-live="polite"><i />{dispatchResult}</p>}
             </> : <div className="compact-empty">No notifications were required for this run.</div>}
           </article>
         </section>

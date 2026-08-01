@@ -4,7 +4,7 @@ import os
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, func, insert, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -289,16 +289,31 @@ def _save_notifications(session: Session, run_id: str, arm_result) -> None:
 
 
 def pending_notification_ids(session: Session, run_id: str) -> list[int]:
+    latest_delivery = (
+        select(
+            NotificationDelivery.notification_id,
+            func.max(NotificationDelivery.id).label("delivery_id"),
+        )
+        .group_by(NotificationDelivery.notification_id)
+        .subquery()
+    )
     return list(
         session.execute(
             select(Notification.id)
             .outerjoin(
+                latest_delivery,
+                latest_delivery.c.notification_id == Notification.id,
+            )
+            .outerjoin(
                 NotificationDelivery,
-                NotificationDelivery.notification_id == Notification.id,
+                NotificationDelivery.id == latest_delivery.c.delivery_id,
             )
             .where(
                 Notification.run_id == run_id,
-                NotificationDelivery.id.is_(None),
+                or_(
+                    latest_delivery.c.delivery_id.is_(None),
+                    NotificationDelivery.status == "failed",
+                ),
             )
             .order_by(Notification.id)
         ).scalars()
@@ -362,6 +377,64 @@ def update_notification_delivery(
     if status == "delivered":
         delivery.delivered_at = datetime.now(timezone.utc)
     return delivery
+
+
+def notification_ids_for_run(session: Session, run_id: str) -> set[int]:
+    return set(
+        session.execute(
+            select(Notification.id).where(Notification.run_id == run_id)
+        ).scalars()
+    )
+
+
+def notification_delivery_summary(session: Session, run_id: str) -> dict:
+    all_deliveries = list(
+        session.execute(
+            select(NotificationDelivery)
+            .join(Notification, Notification.id == NotificationDelivery.notification_id)
+            .where(Notification.run_id == run_id)
+            .order_by(NotificationDelivery.id)
+        ).scalars()
+    )
+    latest_by_notification: dict[int, NotificationDelivery] = {}
+    for delivery in all_deliveries:
+        latest_by_notification[delivery.notification_id] = delivery
+    deliveries = list(latest_by_notification.values())
+    counts: dict[str, int] = {}
+    for delivery in deliveries:
+        counts[delivery.status] = counts.get(delivery.status, 0) + 1
+    if not deliveries:
+        status = "not_dispatched"
+    elif counts.get("failed"):
+        status = "failed"
+    elif counts.get("delivered") == len(deliveries):
+        status = "delivered"
+    else:
+        status = "dispatched"
+    delivered_at = max(
+        (row.delivered_at for row in deliveries if row.delivered_at is not None),
+        default=None,
+    )
+    provider_message_id = next(
+        (
+            row.provider_message_id
+            for row in reversed(deliveries)
+            if row.provider_message_id
+        ),
+        None,
+    )
+    error = next(
+        (row.error for row in reversed(deliveries) if row.error),
+        None,
+    )
+    return {
+        "status": status,
+        "total": len(deliveries),
+        "counts": counts,
+        "delivered_at": delivered_at.isoformat() if delivered_at else None,
+        "provider_message_id": provider_message_id,
+        "error": error,
+    }
 
 
 def _update_fairness_ledger(session: Session, run_id: str, arm_result) -> None:

@@ -43,6 +43,32 @@ def test_health_lists_scenarios(client: TestClient) -> None:
     body = client.get("/api/health").json()
     assert body["status"] == "ok"
     assert {"normal", "heatwave", "ev_surge"} <= set(body["scenarios"])
+    assert set(body["automation"]) == {
+        "n8n_webhook_configured",
+        "callback_auth_configured",
+        "public_api_url_configured",
+    }
+
+
+def test_operator_digest_requires_explicit_consent(
+    client: TestClient, ready_run: str
+) -> None:
+    response = client.post(
+        f"/api/runs/{ready_run}/notifications/dispatch",
+        json={"recipient_email": "operator@example.com", "consent": False},
+    )
+    assert response.status_code == 422
+
+
+def test_delivery_callback_is_closed_without_a_shared_secret(
+    client: TestClient, monkeypatch
+) -> None:
+    monkeypatch.delenv("N8N_CALLBACK_TOKEN", raising=False)
+    response = client.post(
+        "/api/runs/run-1/notifications/delivery",
+        json={"notification_ids": [1], "status": "delivered"},
+    )
+    assert response.status_code == 503
 
 
 def test_recorded_replays_are_discoverable_and_readable(client: TestClient) -> None:

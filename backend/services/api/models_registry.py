@@ -38,8 +38,8 @@ def read_artifacts() -> dict:
             "runtime_ready": False,
             "evaluation_only": True,
             "runtime_message": (
-                "evaluation is available; the live controller uses damped_trend until "
-                "a deployable predictor is exported"
+                "Chronos is evaluated offline; the live simulation intentionally uses "
+                "damped_trend and reports that model in every tick"
             ),
             "artifact": filename,
             **payload,

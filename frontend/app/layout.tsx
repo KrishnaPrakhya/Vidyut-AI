@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     title: "Vidyut | Prevent blackouts before they happen",
     description: "A recorded, auditable digital twin for targeted electrical distribution response.",
     type: "website",
-    images: [{ url: "/vidyut-grid-preview.png", width: 1672, height: 941, alt: "Vidyut distribution grid protecting homes and a hospital" }],
+    images: [{ url: "/vidyut-grid-preview.png", width: 1672, height: 941, alt: "Vidyut distribution network protecting homes and critical services" }],
   },
   twitter: {
     card: "summary_large_image",

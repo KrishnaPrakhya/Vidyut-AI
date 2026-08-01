@@ -1,0 +1,150 @@
+{
+  "name": "Vidyut · simulated operator digest",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vidyut-operator-digest",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "1c832f6b-8425-42f7-bc44-ae0d47b210d1",
+      "name": "Receive Vidyut digest",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 120],
+      "webhookId": "aac866fd-3c73-4766-95ea-d9e148180131",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_IN_N8N",
+          "name": "Vidyut webhook token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Receive Vidyut digest').item.json.body.report_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "audit_report"
+            }
+          }
+        }
+      },
+      "id": "17e34cf2-f848-4452-917c-92264cb34ab2",
+      "name": "Download audit PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 120],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Receive Vidyut digest').item.json.body.recipient.email }}",
+        "subject": "={{ $('Receive Vidyut digest').item.json.body.email.subject }}",
+        "emailType": "html",
+        "message": "={{ $('Receive Vidyut digest').item.json.body.email.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "Vidyut simulation",
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "audit_report"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3129f495-9613-4a3b-b18d-cb5b3afb7d53",
+      "name": "Send operator digest",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [520, 40],
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_IN_N8N",
+          "name": "Vidyut sender Gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Receive Vidyut digest').item.json.body.callback_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { notification_ids: $('Receive Vidyut digest').item.json.body.notification_ids, status: 'delivered', provider_message_id: $json.id || $json.messageId || $execution.id } }}",
+        "options": {}
+      },
+      "id": "e58d5fa9-b8fe-4cd1-a9c2-1404674deff0",
+      "name": "Confirm delivery to Vidyut",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 0],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_IN_N8N",
+          "name": "Vidyut callback token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Receive Vidyut digest').item.json.body.callback_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { notification_ids: $('Receive Vidyut digest').item.json.body.notification_ids, status: 'failed', error: ($json.error && $json.error.message) || $json.message || 'n8n email workflow failed' } }}",
+        "options": {}
+      },
+      "id": "1590b3ad-cd6e-48db-b58e-06444939aecf",
+      "name": "Report failure to Vidyut",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 220],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_IN_N8N",
+          "name": "Vidyut callback token"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Receive Vidyut digest": {
+      "main": [[{"node": "Download audit PDF", "type": "main", "index": 0}]]
+    },
+    "Download audit PDF": {
+      "main": [
+        [{"node": "Send operator digest", "type": "main", "index": 0}],
+        [{"node": "Report failure to Vidyut", "type": "main", "index": 0}]
+      ]
+    },
+    "Send operator digest": {
+      "main": [
+        [{"node": "Confirm delivery to Vidyut", "type": "main", "index": 0}],
+        [{"node": "Report failure to Vidyut", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "none",
+    "saveDataSuccessExecution": "none",
+    "saveManualExecutions": false,
+    "availableInMCP": false
+  },
+  "active": false,
+  "versionId": "6fc57132-4895-4887-90e5-0137653ee4d1",
+  "tags": []
+}

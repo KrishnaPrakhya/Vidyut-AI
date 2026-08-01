@@ -106,7 +106,7 @@ function Substation() {
   </group>;
 }
 
-function Hospital({ uptime }: { uptime: number }) {
+function CriticalFacility({ uptime }: { uptime: number }) {
   const lit = uptime >= 100;
   return <group position={[-7.3, 0, 1.7]}>
     <mesh position={[0, .32, 0]} castShadow><boxGeometry args={[1.1, .64, .8]} /><meshStandardMaterial color={lit ? "#e5eddf" : "#27322d"} emissive={lit ? PALETTE.stable : "#000000"} emissiveIntensity={lit ? .23 : 0} /></mesh>
@@ -125,7 +125,7 @@ function Scene({ snapshot, activeTargets, selectedDt, onSelect, onHover, reduced
     <directionalLight position={[4, 12, 5]} intensity={1.45} castShadow />
     <pointLight position={[0, 5, -6]} intensity={30} color={PALETTE.accent} distance={18} />
     <Substation />
-    <Hospital uptime={snapshot.metrics.critical_uptime_pct} />
+    <CriticalFacility uptime={snapshot.metrics.critical_uptime_pct} />
     {FEEDER_X.map((x, index) => <Feeder key={x} x={x} loading={snapshot.feeders[index]?.loading_pct ?? 0} id={snapshot.feeders[index]?.id ?? `F${index + 1}`} />)}
     {placed.map((item) => <Locality key={item.dt.id} placed={item} intervened={activeTargets.has(item.dt.id)} selected={selectedDt === item.dt.id} onSelect={onSelect} onHover={onHover} />)}
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -.03, 0]} receiveShadow><planeGeometry args={[22, 17]} /><meshStandardMaterial color="#08130e" roughness={1} /></mesh>

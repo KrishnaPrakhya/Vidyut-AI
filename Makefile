@@ -2,7 +2,7 @@ PY := backend/.venv/Scripts/python.exe
 SCENARIO ?= heatwave
 SEED ?= 42
 
-.PHONY: setup demo api test test-all run record models clean
+.PHONY: setup demo demo-check api test test-all run record models clean
 
 setup:
 	cd backend && uv sync
@@ -12,6 +12,9 @@ api:
 
 demo:
 	docker compose up --build
+
+demo-check:
+	backend/.venv/Scripts/python.exe scripts/demo_check.py
 
 run:
 	cd backend && .venv/Scripts/python.exe -m services.sim.run --scenario $(SCENARIO) --seed $(SEED)

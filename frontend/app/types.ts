@@ -216,3 +216,31 @@ export type FairnessRow = {
   minutes_by_level: Record<string, number>;
   last_curtailed_at: string | null;
 };
+
+export type ForecastEvaluation = {
+  trained: boolean;
+  runtime_ready: boolean;
+  evaluation_only: boolean;
+  runtime_message: string;
+  holdout: string;
+  n_series: number;
+  n_obs: number;
+  models: Record<string, { MASE: number; MAPE?: number }>;
+  cold_start: {
+    history_days: number;
+    lgbm_from_scratch: { MASE: number };
+    chronos_finetuned: { MASE: number };
+  };
+  by_horizon: Record<string, Record<string, { MASE: number; MAPE: number; MAE_kw: number }>>;
+  data: {
+    country: string;
+    real_measurements: boolean;
+    synthetic_training_data: boolean;
+    sources: string[];
+  };
+};
+
+export type ModelsRegistry = {
+  any_trained: boolean;
+  models: { forecast: ForecastEvaluation };
+};

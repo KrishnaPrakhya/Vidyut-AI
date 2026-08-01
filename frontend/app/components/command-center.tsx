@@ -59,7 +59,6 @@ export function CommandCenter({ recording, scenario, online, source, onOpenRepla
   })), [recording]);
 
   const avoided = totals.baseline.homes_dark_minutes - totals.vidyut.homes_dark_minutes;
-  const health = Math.max(0, 100 - Math.max(0, snapshot.metrics.max_trafo_loading_pct - 90) * 1.3);
   const riskState = selected.energized ? selected.loading_pct >= 100 ? "Critical" : selected.loading_pct >= 90 ? "Watch" : "Stable" : "Offline";
 
   return <main className="command-center">
@@ -85,7 +84,7 @@ export function CommandCenter({ recording, scenario, online, source, onOpenRepla
     </section>
 
     <section className="command-kpis">
-      <article><span>Network health <i>◇</i></span><strong>{formatNumber(health, 1)}%</strong><div><b style={{ width: `${health}%` }} /></div><small>{snapshot.metrics.converged ? "Power flow converged" : "Power flow requires attention"}</small></article>
+      <article><span>Power flow <i>◇</i></span><strong>{snapshot.metrics.converged ? "Converged" : "Attention"}</strong><div><b style={{ width: snapshot.metrics.converged ? "100%" : "12%" }} /></div><small>{snapshot.dts.length} transformer states solved this interval</small></article>
       <article><span>Peak transformer <i>△</i></span><strong className={snapshot.metrics.max_trafo_loading_pct >= 100 ? "warn" : ""}>{formatNumber(snapshot.metrics.max_trafo_loading_pct)}%</strong><div><b style={{ width: `${Math.min(100, snapshot.metrics.max_trafo_loading_pct)}%` }} /></div><small>{snapshot.metrics.max_trafo_loading_pct >= 100 ? "Above equipment rating" : "Within operating range"}</small></article>
       <article><span>Outage burden avoided <i>↗</i></span><strong>{formatNumber(avoided, 0)}</strong><div><b style={{ width: `${Math.min(100, avoided / Math.max(totals.baseline.homes_dark_minutes, 1) * 100)}%` }} /></div><small>homes-dark minutes · full day</small></article>
       <article><span>Critical uptime <i>+</i></span><strong>{formatNumber(snapshot.metrics.critical_uptime_pct, 2)}%</strong><div><b style={{ width: `${snapshot.metrics.critical_uptime_pct}%` }} /></div><small>Protected services remain powered</small></article>

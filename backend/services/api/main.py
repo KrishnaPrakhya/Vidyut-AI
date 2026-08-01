@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import math
 import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -18,15 +29,19 @@ from services.api.schemas import (
     CreateRunRequest,
     CreateRunResponse,
     DeliveryReceiptRequest,
+    DigestDeliveryReceiptRequest,
     EventVerificationRequest,
     FlexibilityEstimateRequest,
     InjectRequest,
+    OperatorDigestRequest,
     delta_payload,
     tick_payload,
     totals_payload,
 )
 from services.api.store import store
-from services.dispatch.n8n import dispatch
+from services.dispatch.digest import build_operator_digest
+from services.dispatch.n8n import dispatch_operator_digest, webhook_token, webhook_url
+from services.dispatch.rate_limit import operator_digest_limiter
 from services.observability import (
     engine_status,
     estimate_weather_opportunity,
@@ -43,6 +58,8 @@ from services.persistence.queries import (
 )
 from services.persistence.repository import (
     pending_notification_ids,
+    notification_delivery_summary,
+    notification_ids_for_run,
     record_notification_dispatch,
     update_notification_delivery,
 )
@@ -81,6 +98,15 @@ def health() -> dict:
         "status": "ok",
         "scenarios": available_scenarios(),
         "database": db_check().to_dict(),
+        "automation": {
+            "n8n_webhook_configured": bool(webhook_url() and webhook_token()),
+            "callback_auth_configured": bool(
+                os.environ.get("N8N_CALLBACK_TOKEN", "").strip()
+            ),
+            "public_api_url_configured": bool(
+                os.environ.get("VIDYUT_PUBLIC_API_URL", "").strip()
+            ),
+        },
     }
 
 
@@ -185,6 +211,28 @@ def _require_record(run_id: str):
     if record is None:
         raise HTTPException(status_code=404, detail="run not found")
     return record
+
+
+def _public_api_base() -> str:
+    configured = os.environ.get("VIDYUT_PUBLIC_API_URL", "").strip()
+    parsed = urlparse(configured)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(
+            status_code=503,
+            detail="VIDYUT_PUBLIC_API_URL must be an absolute HTTP(S) URL",
+        )
+    return configured.rstrip("/")
+
+
+def _verify_callback_token(provided: str | None) -> None:
+    expected = os.environ.get("N8N_CALLBACK_TOKEN", "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="delivery callback authentication is not configured",
+        )
+    if provided is None or not hmac.compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail="invalid delivery callback token")
 
 
 @app.get("/api/runs/{run_id}")
@@ -319,35 +367,148 @@ def run_notifications(run_id: str) -> dict:
 
 
 @app.post("/api/runs/{run_id}/notifications/dispatch")
-def dispatch_notifications(run_id: str) -> dict:
+def dispatch_notifications(
+    run_id: str,
+    payload: OperatorDigestRequest,
+    http_request: Request,
+) -> dict:
     record = _require_record(run_id)
     if record.result is None:
         raise HTTPException(status_code=409, detail="run is not ready")
+    if webhook_url() is None or webhook_token() is None:
+        return {
+            "run_id": run_id,
+            "status": "not_configured",
+            "configured": False,
+            "accepted": False,
+            "notification_count": len(
+                record.result.arms["vidyut"].outbox.pending()
+            ),
+            "tracking": False,
+            "recipient_retained": False,
+            "error": "N8N_WEBHOOK_URL and N8N_WEBHOOK_TOKEN must be configured",
+        }
+    pending = record.result.arms["vidyut"].outbox.pending()
+    if not pending:
+        raise HTTPException(status_code=409, detail="no notifications are pending")
+
     notification_ids: list[int] = []
     try:
         with session_scope() as session:
             if session is not None:
                 notification_ids = pending_notification_ids(session, run_id)
-    except Exception:
-        notification_ids = []
-    report = dispatch(
-        run_id,
-        record.result.arms["vidyut"].outbox,
-        notification_ids=notification_ids,
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"operator delivery tracking is unavailable: {exc}",
+        ) from exc
+    if len(notification_ids) != len(pending):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "operator delivery tracking requires a persisted run; "
+                "start the API with DATABASE_URL configured"
+            ),
+        )
+
+    client_ip = http_request.client.host if http_request.client else "unknown"
+    limit = operator_digest_limiter.check(client_ip, payload.recipient_email)
+    if not limit.allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="operator digest rate limit reached; try again later",
+            headers={"Retry-After": str(limit.retry_after_seconds)},
+        )
+
+    api_base = _public_api_base()
+    digest_payload = build_operator_digest(
+        record,
+        notification_ids,
+        callback_url=f"{api_base}/api/runs/{run_id}/notifications/delivery",
+        report_url=f"{api_base}/api/runs/{run_id}/report",
     )
-    if report.delivered and notification_ids:
+    report = dispatch_operator_digest(
+        record.result.arms["vidyut"].outbox,
+        payload.recipient_email,
+        digest_payload,
+    )
+    if report.accepted:
         with session_scope() as session:
             if session is not None:
-                record_notification_dispatch(
-                    session, notification_ids[: report.delivered]
+                record_notification_dispatch(session, notification_ids)
+    return {
+        "run_id": run_id,
+        **report.to_dict(),
+        "tracking": report.accepted,
+        "recipient_retained": False,
+        "delivery_status_url": f"/api/runs/{run_id}/notifications/delivery",
+    }
+
+
+@app.get("/api/runs/{run_id}/notifications/delivery")
+def run_notification_delivery(run_id: str) -> dict:
+    _require_record(run_id)
+    with session_scope() as session:
+        if session is None:
+            raise HTTPException(
+                status_code=503,
+                detail="delivery tracking requires a database",
+            )
+        return {"run_id": run_id, **notification_delivery_summary(session, run_id)}
+
+
+@app.post("/api/runs/{run_id}/notifications/delivery")
+def run_notification_delivery_callback(
+    run_id: str,
+    payload: DigestDeliveryReceiptRequest,
+    x_vidyut_callback_token: str | None = Header(default=None),
+) -> dict:
+    _verify_callback_token(x_vidyut_callback_token)
+    with session_scope() as session:
+        if session is None:
+            raise HTTPException(
+                status_code=503,
+                detail="delivery receipts require a database",
+            )
+        valid_ids = notification_ids_for_run(session, run_id)
+        requested_ids = set(payload.notification_ids)
+        if not requested_ids.issubset(valid_ids):
+            raise HTTPException(
+                status_code=404,
+                detail="one or more notifications do not belong to this run",
+            )
+        for notification_id in payload.notification_ids:
+            try:
+                update_notification_delivery(
+                    session,
+                    notification_id,
+                    payload.status,
+                    payload.provider_message_id,
+                    payload.error,
                 )
-    return {"run_id": run_id, **report.to_dict()}
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+        session.flush()
+        if payload.status == "delivered":
+            record = store.get(run_id)
+            if record is not None and record.result is not None:
+                record.result.arms["vidyut"].outbox.acknowledge(
+                    len(payload.notification_ids)
+                )
+        return {
+            "run_id": run_id,
+            "status": payload.status,
+            "updated": len(payload.notification_ids),
+        }
 
 
 @app.post("/api/notifications/{notification_id}/delivery")
 def notification_delivery(
-    notification_id: int, request: DeliveryReceiptRequest
+    notification_id: int,
+    request: DeliveryReceiptRequest,
+    x_vidyut_callback_token: str | None = Header(default=None),
 ) -> dict:
+    _verify_callback_token(x_vidyut_callback_token)
     with session_scope() as session:
         if session is None:
             raise HTTPException(

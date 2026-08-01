@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { OpportunityEstimate, VerificationResult } from "../types";
+import { useEffect, useState } from "react";
+import type { ModelsRegistry, OpportunityEstimate, VerificationResult } from "../types";
 import { api, formatNumber, titleCase } from "../lib/replay";
 
 type AssuranceLabProps = {
@@ -22,6 +22,23 @@ export function AssuranceLab({ online }: AssuranceLabProps) {
   const [verification, setVerification] = useState<VerificationResult | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [modelRegistry, setModelRegistry] = useState<ModelsRegistry | null>(null);
+
+  useEffect(() => {
+    if (!online) return;
+    let active = true;
+    api<ModelsRegistry>("/api/models")
+      .then((result) => { if (active) setModelRegistry(result); })
+      .catch(() => { if (active) setModelRegistry(null); });
+    return () => { active = false; };
+  }, [online]);
+
+  const forecast = modelRegistry?.models.forecast;
+  const improvement = (baseline: number | undefined, candidate: number | undefined) =>
+    baseline && candidate !== undefined ? (baseline - candidate) / baseline * 100 : null;
+  const hourGain = improvement(forecast?.by_horizon.seasonal_naive.next_hour.MASE, forecast?.by_horizon.chronos_finetuned.next_hour.MASE);
+  const dayGain = improvement(forecast?.models.seasonal_naive.MASE, forecast?.models.chronos_finetuned.MASE);
+  const coldGain = improvement(forecast?.cold_start.lgbm_from_scratch.MASE, forecast?.cold_start.chronos_finetuned.MASE);
 
   async function estimateOpportunity() {
     setBusy("estimate");
@@ -95,6 +112,21 @@ export function AssuranceLab({ online }: AssuranceLabProps) {
       </section>
 
       {error && <p className="global-error" role="alert">{error}</p>}
+
+      <section className="forecast-proof panel" aria-label="Forecast model evidence">
+        <div className="forecast-proof-copy">
+          <span className="source-chip verified">held-out evaluation</span>
+          <h2>Chronos evidence, without a runtime claim.</h2>
+          <p>{forecast?.trained ? `${forecast.n_series} real Indian meter and aggregate series were evaluated on the final held-out day.` : "The forecast evaluation artifact is not available on this API instance."}</p>
+          <small>{forecast?.runtime_message ?? "The live simulation continues to report its actual forecaster in every tick."}</small>
+        </div>
+        <div className="forecast-proof-metrics">
+          <div><span>Next hour</span><strong>{formatNumber(hourGain, 1)}%</strong><small>lower MASE than seasonal naive</small></div>
+          <div><span>Full day</span><strong>{formatNumber(dayGain, 1)}%</strong><small>lower MASE than seasonal naive</small></div>
+          <div><span>14-day cold start</span><strong>{formatNumber(coldGain, 1)}%</strong><small>lower MASE than from-scratch LGBM</small></div>
+        </div>
+        <div className="forecast-provenance"><i /><span><strong>{forecast?.data.real_measurements ? "Real measurements" : "Artifact unavailable"}</strong><small>{forecast?.data.sources?.[0] ?? "Start the API to load model provenance."}</small></span></div>
+      </section>
 
       <section className="assurance-grid">
         <article className="method-card panel">
