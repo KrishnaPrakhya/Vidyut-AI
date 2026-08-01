@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Recording, RunFlexibility, RunSummary, ScenarioName, TickFrame } from "../types";
 import { API_URL, api, formatNumber, titleCase } from "../lib/replay";
 import { TransformerGrid } from "./transformer-grid";
@@ -34,6 +34,14 @@ const defaultParams = {
   peak_multiplier: 1.35,
 };
 
+const simulationMessages = [
+  "Building identical networks so the comparison stays fair.",
+  "Applying the selected demand profile to baseline and Vidyut.",
+  "Checking every transformer against its equipment limit.",
+  "Recording homes protected, flexibility used and critical-load uptime.",
+  "Preparing the timeline replay and 3D network.",
+];
+
 export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProps) {
   const [scenario, setScenario] = useState<ScenarioName>("heatwave");
   const [seed, setSeed] = useState(42);
@@ -41,7 +49,9 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
   const [advanced, setAdvanced] = useState(false);
   const [params, setParams] = useState(defaultParams);
   const [phase, setPhase] = useState("Ready to run");
-  const [busy, setBusy] = useState(false);
+  const [simulationBusy, setSimulationBusy] = useState(false);
+  const [dispatchBusy, setDispatchBusy] = useState(false);
+  const [messageIndex, setMessageIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [summary, setSummary] = useState<RunSummary | null>(null);
@@ -58,12 +68,38 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
   const [networkView, setNetworkView] = useState<"grid" | "spatial">("grid");
   const [spatialArm, setSpatialArm] = useState<"baseline" | "vidyut">("vidyut");
   const [selectedDt, setSelectedDt] = useState("F1-DT17");
+  const resultsRef = useRef<HTMLElement | null>(null);
 
-  const progress = phase === "Complete" ? 100 : busy ? 58 : 0;
+  const busy = simulationBusy || dispatchBusy;
+  const progress = phase === "Complete" ? 100
+    : phase === "Streaming the network" ? 88
+      : phase === "Loading audited results" ? 74
+        : phase === "Simulating both control strategies" ? 52
+          : simulationBusy ? 18
+            : 0;
   const assets = useMemo(
     () => Object.entries(flexibility?.registered.capacity_by_kind_kw ?? {}).sort((a, b) => b[1] - a[1]),
     [flexibility],
   );
+
+  useEffect(() => {
+    if (!simulationBusy) return;
+    const timer = window.setInterval(() => {
+      setMessageIndex((current) => (current + 1) % simulationMessages.length);
+    }, 2400);
+    return () => window.clearInterval(timer);
+  }, [simulationBusy]);
+
+  useEffect(() => {
+    if (!completedRecording) return;
+    const frame = window.requestAnimationFrame(() => {
+      resultsRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "start",
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [completedRecording]);
 
   async function waitForRun(id: string) {
     for (let attempt = 0; attempt < 240; attempt += 1) {
@@ -110,7 +146,8 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
   }
 
   async function runSimulation() {
-    setBusy(true);
+    setSimulationBusy(true);
+    setMessageIndex(0);
     setError(null);
     setSummary(null);
     setFlexibility(null);
@@ -167,7 +204,7 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
       setError(caught instanceof Error ? caught.message : "Could not run the simulation");
       setPhase("Run failed");
     } finally {
-      setBusy(false);
+      setSimulationBusy(false);
     }
   }
 
@@ -177,7 +214,7 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
       setError("Enter the operator email and confirm one-time use before sending.");
       return;
     }
-    setBusy(true);
+    setDispatchBusy(true);
     setError(null);
     try {
       const result = await api<{ status: string; accepted: boolean; configured: boolean; notification_count: number; tracking: boolean; error: string | null }>(
@@ -201,7 +238,7 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
       setDispatchPhase("failed");
       setError(caught instanceof Error ? caught.message : "Dispatch failed");
     } finally {
-      setBusy(false);
+      setDispatchBusy(false);
     }
   }
 
@@ -259,8 +296,13 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
           {advanced && <div className="advanced-grid">
             {Object.entries(params).map(([key, value]) => <label key={key}>{titleCase(key)}<input type="number" step="0.01" value={value} onChange={(event) => setParams((current) => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}
           </div>}
-          <button className="primary-action" onClick={runSimulation} disabled={!online || busy}>{busy ? "Running simulation…" : `Run ${ticks === 96 ? "full day" : `${ticks} intervals`}`}</button>
-          <div className="run-progress"><i style={{ width: `${progress}%` }} /><span>{ticks * 15} simulated minutes · baseline + Vidyut</span></div>
+          <button className={`primary-action ${simulationBusy ? "is-running" : ""}`} onClick={runSimulation} disabled={!online || busy}>{simulationBusy ? <><i className="button-spinner" aria-hidden="true" />Running both strategies…</> : `Run ${ticks === 96 ? "full day" : `${ticks} intervals`}`}</button>
+          <div className="run-progress" aria-hidden="true"><i style={{ width: `${progress}%` }} /></div>
+          {simulationBusy ? <div className="simulation-buffer" role="status" aria-live="polite" aria-atomic="true">
+            <strong><i aria-hidden="true" />Processing {ticks * 15} simulated minutes</strong>
+            <p key={messageIndex}>{simulationMessages[messageIndex]}</p>
+            <span>{phase} · results will open automatically</span>
+          </div> : <p className="run-caption">{phase === "Complete" ? "Run complete · results ready below" : `${ticks * 15} simulated minutes · baseline + Vidyut`}</p>}
           {error && <p className="inline-error" role="alert">{error}</p>}
         </aside>
       </section>
@@ -270,8 +312,8 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
         <article><span>02</span><strong>Different control</strong><p>The baseline protects equipment reactively. Vidyut can forecast and target flexibility.</p></article>
         <article><span>03</span><strong>Auditable output</strong><p>Events, notifications, fairness debt and a generated PDF are retained with the run.</p></article>
       </section> : <>
-        <section className="results-section">
-          <div className="section-heading"><div><p className="eyebrow">Run outcome</p><h2>One demand profile. Two futures.</h2></div><div className="run-identity"><span>Run ID</span><code>{runId}</code></div></div>
+        <section className="results-section" id="simulation-results" ref={resultsRef} tabIndex={-1} aria-labelledby="simulation-results-title">
+          <div className="section-heading"><div><p className="eyebrow">Run outcome</p><h2 id="simulation-results-title">One demand profile. Two futures.</h2></div><div className="run-identity"><span>Run ID</span><code>{runId}</code></div></div>
           <div className="comparison-table">
             <div className="comparison-head"><span>Outcome</span><span>Baseline</span><span>Vidyut</span><span>Difference</span></div>
             {comparison.map(([label, baseline, vidyut, unit, higherBetter]) => {
@@ -342,7 +384,7 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
               <div className="operator-digest-form">
                 <label>Operator email<input type="email" autoComplete="email" placeholder="operator@example.com" value={operatorEmail} onChange={(event) => setOperatorEmail(event.target.value)} disabled={busy || dispatchPhase === "accepted" || dispatchPhase === "delivered"} /></label>
                 <label className="consent-row"><input type="checkbox" checked={digestConsent} onChange={(event) => setDigestConsent(event.target.checked)} disabled={busy || dispatchPhase === "accepted" || dispatchPhase === "delivered"} /><span>Use this address once for this simulated digest. Vidyut will not store it.</span></label>
-                <button className="secondary-action button" onClick={dispatchNotifications} disabled={busy || !operatorEmail.trim() || !digestConsent || dispatchPhase === "accepted" || dispatchPhase === "delivered"}>{busy ? "Sending to n8n…" : "Send simulated operator digest"}</button>
+                <button className="secondary-action button" onClick={dispatchNotifications} disabled={busy || !operatorEmail.trim() || !digestConsent || dispatchPhase === "accepted" || dispatchPhase === "delivered"}>{dispatchBusy ? "Sending to n8n…" : "Send simulated operator digest"}</button>
               </div>
               {dispatchResult && <p className={`delivery-state ${dispatchPhase}`} aria-live="polite"><i />{dispatchResult}</p>}
             </> : <div className="compact-empty">No notifications were required for this run.</div>}

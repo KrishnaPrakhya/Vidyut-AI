@@ -200,7 +200,7 @@ const specialistGuidance: Record<CopilotIntent, string> = {
 
 function specialistNode(intent: CopilotIntent): typeof AgentState.Node {
   return async (state) => {
-    const system = `You are Vidyut Copilot, an advisory analyst for a simulated Indian electrical-distribution replay. ${specialistGuidance[intent]} Use only the supplied evidence. Start by saying this is a simulated reading. Never claim live telemetry, invent causes or affected people, recommend or issue an actuation command, or imply that you control equipment. Event targets such as F1-DT17 are local transformer areas, not feeders. Repeat a metric as being at its recorded value; never describe it as below or above that same value. Use plain text without Markdown, at most 90 words, and finish every sentence. Return the exact IDs of every evidence record used; do not cite an unused record.`;
+    const system = `You are Vidyut Copilot, an advisory analyst for a simulated Indian electrical-distribution replay. ${specialistGuidance[intent]} Use only the supplied evidence. The surrounding interface already identifies the data as a recorded simulation, so answer directly without repeating a simulation disclaimer. Clarify that the data is not live only when the user asks about provenance, current real-world conditions, or control authority. Never claim live telemetry, invent causes or affected people, recommend or issue an actuation command, or imply that you control equipment. Event targets such as F1-DT17 are local transformer areas, not feeders. Repeat a metric as being at its recorded value; never describe it as below or above that same value. Use plain text without Markdown, at most 90 words, and finish every sentence. Return the exact IDs of every evidence record used; do not cite an unused record.`;
     const input = JSON.stringify({ question: state.question, audience: state.audience, frame: { scenario: state.context.scenario, clock: state.context.clock, transformer_id: state.context.transformer.id }, evidence: state.evidence });
     let answer = "";
     let usedEvidenceIds: string[] = [];
@@ -291,9 +291,9 @@ function deterministicAnswer(state: typeof AgentState.State) {
   const vidyut = number(transformer.vidyut_loading_pct, "%");
   const baselineDark = number(transformer.baseline_homes_dark);
   const vidyutDark = number(transformer.vidyut_homes_dark);
-  if (state.intent === "resident") return `This is a simulated reading for ${transformer.id}. The baseline shows ${baselineDark} homes dark, while the Vidyut replay shows ${vidyutDark}. Recorded controller events are advisory evidence from the simulation, not live commands.`;
-  if (state.intent === "incident") return `This is a simulated incident brief for ${state.context.clock}. ${transformer.id} reaches ${baseline} in the baseline and ${vidyut} with Vidyut. Homes dark change from ${baselineDark} to ${vidyutDark}. The statement is limited to this recorded interval.`;
-  return `This is a simulated reading for ${transformer.id}. Baseline loading is ${baseline}, compared with ${vidyut} in the Vidyut replay. Homes dark are ${baselineDark} in the baseline and ${vidyutDark} with Vidyut. The copilot is advisory and cannot operate grid equipment.`;
+  if (state.intent === "resident") return `For ${transformer.id}, the baseline shows ${baselineDark} homes dark, while the Vidyut replay shows ${vidyutDark}. The recorded controller events explain what changed without issuing commands to equipment.`;
+  if (state.intent === "incident") return `${transformer.id} at ${state.context.clock}: baseline loading is ${baseline}, compared with ${vidyut} with Vidyut. Homes dark change from ${baselineDark} to ${vidyutDark}. This brief is limited to the recorded interval.`;
+  return `${transformer.id} records baseline loading of ${baseline}, compared with ${vidyut} in the Vidyut replay. Homes dark are ${baselineDark} in the baseline and ${vidyutDark} with Vidyut. The copilot explains the recorded evidence without operating equipment.`;
 }
 
 const repairNode: typeof AgentState.Node = async (state) => {
