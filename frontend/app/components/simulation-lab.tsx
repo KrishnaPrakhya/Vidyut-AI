@@ -301,7 +301,7 @@ export function SimulationLab({ online, onOpenCommandCenter }: SimulationLabProp
                   <button type="button" className={networkView === "grid" ? "active" : ""} onClick={() => setNetworkView("grid")} aria-pressed={networkView === "grid"}>Grid</button>
                   <button type="button" className={networkView === "spatial" ? "active" : ""} onClick={() => setNetworkView("spatial")} aria-pressed={networkView === "spatial"}>3D</button>
                 </div>
-                {networkView === "spatial" && <div className="arm-switch" role="group" aria-label="Spatial strategy"><button type="button" className={spatialArm === "baseline" ? "active danger" : ""} onClick={() => setSpatialArm("baseline")}>Baseline</button><button type="button" className={spatialArm === "vidyut" ? "active" : ""} onClick={() => setSpatialArm("vidyut")}>Vidyut</button></div>}
+                {networkView === "spatial" && <div className="arm-switch" role="group" aria-label="Spatial strategy"><button type="button" className={spatialArm === "baseline" ? "active danger" : ""} onClick={() => setSpatialArm("baseline")} aria-pressed={spatialArm === "baseline"}>Baseline</button><button type="button" className={spatialArm === "vidyut" ? "active" : ""} onClick={() => setSpatialArm("vidyut")} aria-pressed={spatialArm === "vidyut"}>Vidyut</button></div>}
               </div>
 
               {networkView === "grid" ? <div className="network-compare">
