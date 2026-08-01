@@ -3,9 +3,12 @@ import type { Recording, StoryBeat, TickEvent, TickFrame } from "../types";
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = init?.body === undefined
+    ? init?.headers
+    : { "Content-Type": "application/json", ...init?.headers };
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers,
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);

@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from dataclasses import asdict
 from urllib.parse import urlparse
 
+from dotenv import load_dotenv
 from fastapi import (
     FastAPI,
     Header,
@@ -22,6 +23,16 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+
+# Keep local startup predictable regardless of whether uvicorn is launched from
+# the repository root or from backend/. Existing process environment variables win.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+for env_path in (
+    PROJECT_ROOT / ".env",
+    PROJECT_ROOT / "backend" / ".env",
+    PROJECT_ROOT / "frontend" / ".env",  # backwards-compatible local fallback
+):
+    load_dotenv(env_path, override=False)
 
 from services.api.models_registry import read_artifacts
 from services.api.report import build_report_pdf
@@ -213,15 +224,26 @@ def _require_record(run_id: str):
     return record
 
 
-def _public_api_base() -> str:
-    configured = os.environ.get("VIDYUT_PUBLIC_API_URL", "").strip()
+def _api_base(env_var: str) -> str:
+    configured = os.environ.get(env_var, "").strip()
     parsed = urlparse(configured)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise HTTPException(
             status_code=503,
-            detail="VIDYUT_PUBLIC_API_URL must be an absolute HTTP(S) URL",
+            detail=f"{env_var} must be an absolute HTTP(S) URL",
         )
     return configured.rstrip("/")
+
+
+def _public_api_base() -> str:
+    return _api_base("VIDYUT_PUBLIC_API_URL")
+
+
+def _n8n_api_base() -> str:
+    configured = os.environ.get("VIDYUT_N8N_API_URL", "").strip()
+    if not configured:
+        return _public_api_base()
+    return _api_base("VIDYUT_N8N_API_URL")
 
 
 def _verify_callback_token(provided: str | None) -> None:
@@ -411,6 +433,8 @@ def dispatch_notifications(
             ),
         )
 
+    public_api_base = _public_api_base()
+    n8n_api_base = _n8n_api_base()
     client_ip = http_request.client.host if http_request.client else "unknown"
     limit = operator_digest_limiter.check(client_ip, payload.recipient_email)
     if not limit.allowed:
@@ -420,12 +444,12 @@ def dispatch_notifications(
             headers={"Retry-After": str(limit.retry_after_seconds)},
         )
 
-    api_base = _public_api_base()
     digest_payload = build_operator_digest(
         record,
         notification_ids,
-        callback_url=f"{api_base}/api/runs/{run_id}/notifications/delivery",
-        report_url=f"{api_base}/api/runs/{run_id}/report",
+        callback_url=f"{n8n_api_base}/api/runs/{run_id}/notifications/delivery",
+        report_url=f"{n8n_api_base}/api/runs/{run_id}/report",
+        public_report_url=f"{public_api_base}/api/runs/{run_id}/report",
     )
     report = dispatch_operator_digest(
         record.result.arms["vidyut"].outbox,

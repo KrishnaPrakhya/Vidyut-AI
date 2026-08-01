@@ -25,10 +25,22 @@ Copy `.env.example` to `.env` and set:
 N8N_WEBHOOK_URL=https://YOUR_N8N_HOST/webhook/vidyut-operator-digest
 N8N_WEBHOOK_TOKEN=use-a-long-random-value
 N8N_CALLBACK_TOKEN=use-a-different-long-random-value
-VIDYUT_PUBLIC_API_URL=https://YOUR_PUBLIC_API_HOST
+VIDYUT_PUBLIC_API_URL=http://localhost:8000
+VIDYUT_N8N_API_URL=http://host.docker.internal:8000
+DATABASE_URL=postgresql+psycopg://vidyut:vidyut@localhost:5433/vidyut
 ```
 
-`VIDYUT_PUBLIC_API_URL` must be reachable from n8n because it is used for the PDF download and delivery callback. For a local n8n instance running on the same machine, `http://host.docker.internal:8000` is usually appropriate.
+`VIDYUT_PUBLIC_API_URL` is written into the operator email and must be reachable from the operator's browser. `VIDYUT_N8N_API_URL` is used only for PDF download and delivery callbacks from n8n. When n8n runs in Docker, `host.docker.internal` is usually appropriate for that internal URL.
+
+Put backend values in the repository-root `.env` (or `backend/.env`) and restart the API. Local development also reads `frontend/.env` as a compatibility fallback, but keeping n8n secrets beside frontend configuration is discouraged.
+
+When the Vidyut API also runs through Docker Compose, use the Docker-specific overrides below. The included defaults already match a local n8n container and the supplied workflow path:
+
+```dotenv
+N8N_DOCKER_WEBHOOK_URL=http://host.docker.internal:5678/webhook/vidyut-operator-digest
+VIDYUT_N8N_API_URL=http://host.docker.internal:8000
+VIDYUT_PUBLIC_API_URL=http://localhost:8000
+```
 
 The API rate-limits each hashed email to 3 sends/hour and each client IP to 10 sends/hour. It never writes the email address to the run record or database.
 
