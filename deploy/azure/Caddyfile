@@ -1,0 +1,23 @@
+{
+  email {$TLS_EMAIL}
+}
+
+{$API_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy api:8000
+  header {
+    -Server
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+  }
+}
+
+{$N8N_DOMAIN} {
+  encode zstd gzip
+  reverse_proxy n8n:5678
+  header {
+    -Server
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+  }
+}
