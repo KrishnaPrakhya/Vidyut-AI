@@ -76,6 +76,13 @@ class DigestDeliveryReceiptRequest(BaseModel):
     provider_message_id: str | None = Field(default=None, max_length=128)
     error: str | None = Field(default=None, max_length=2000)
 
+    @field_validator("notification_ids")
+    @classmethod
+    def unique_notification_ids(cls, value: list[int]) -> list[int]:
+        if len(value) != len(set(value)):
+            raise ValueError("notification_ids must be unique")
+        return value
+
 
 class FlexibilityEstimateRequest(BaseModel):
     aggregate_kw: list[list[float | None]]

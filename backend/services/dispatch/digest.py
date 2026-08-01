@@ -49,6 +49,7 @@ def build_operator_digest(
     notification_ids: list[int],
     callback_url: str,
     report_url: str,
+    public_report_url: str | None = None,
 ) -> dict[str, Any]:
     """Build a transport-ready digest without receiving or retaining an email address."""
     if record.result is None:
@@ -63,6 +64,7 @@ def build_operator_digest(
     household_opportunities = sum(row.households for row in notifications)
     preview = notifications[0].to_dict() if notifications else None
     scenario_label = record.scenario.replace("_", " ").title()
+    operator_report_url = public_report_url or report_url
     subject = (
         f"Vidyut — simulated {scenario_label} run digest · seed {record.seed}"
     )
@@ -94,7 +96,7 @@ def build_operator_digest(
                 f"Dark-home minutes: baseline {baseline.homes_dark_minutes:,.0f}; "
                 f"Vidyut {vidyut.homes_dark_minutes:,.0f}."
             ),
-            f"Audit report: {report_url}",
+            f"Audit report: {operator_report_url}",
             "",
             "RESIDENT MESSAGE PREVIEW — NOT SENT TO A RESIDENT",
             preview_message,
@@ -114,7 +116,7 @@ def build_operator_digest(
     <p><strong>Critical-load uptime:</strong> {vidyut.critical_uptime_pct:.3f}%<br>
       <strong>Dark-home minutes:</strong> {baseline.homes_dark_minutes:,.0f} baseline →
       {vidyut.homes_dark_minutes:,.0f} with Vidyut</p>
-    <p><a href="{escape(report_url, quote=True)}">Open the auditable simulation report</a></p>
+    <p><a href="{escape(operator_report_url, quote=True)}">Open the auditable simulation report</a></p>
     <div style="margin-top:24px;padding:16px;background:#f2f7f3;border-left:4px solid #a4d63c">
       <strong>Resident message preview — not sent to a resident</strong><br>
       {escape(preview_message)}
@@ -144,6 +146,7 @@ def build_operator_digest(
         },
         "notification_ids": notification_ids,
         "report_url": report_url,
+        "public_report_url": operator_report_url,
         "callback_url": callback_url,
         "simulation_notice": (
             "This is a simulation. No live utility system or resident was contacted."

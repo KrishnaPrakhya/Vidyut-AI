@@ -45,11 +45,16 @@ def test_operator_digest_is_explicitly_simulated_and_has_no_recipient() -> None:
         record,
         [731],
         "https://api.example/callback",
-        "https://api.example/report",
+        "https://n8n-api.example/report",
+        "https://operator.example/report",
     )
 
     assert "simulated" in payload["email"]["subject"].lower()
     assert "not sent to a resident" in payload["email"]["text"].lower()
     assert payload["digest"]["peak_outage_avoided"]["homes_kept_powered"] == 70
     assert payload["notification_ids"] == [731]
+    assert payload["report_url"] == "https://n8n-api.example/report"
+    assert payload["public_report_url"] == "https://operator.example/report"
+    assert "https://operator.example/report" in payload["email"]["html"]
+    assert "https://n8n-api.example/report" not in payload["email"]["html"]
     assert "recipient" not in payload

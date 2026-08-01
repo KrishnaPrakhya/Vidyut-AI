@@ -103,7 +103,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { notification_ids: $('Receive Vidyut digest').item.json.body.notification_ids, status: 'failed', error: ($json.error && $json.error.message) || $json.message || 'n8n email workflow failed' } }}",
+        "jsonBody": "={{ { notification_ids: $('Receive Vidyut digest').item.json.body.notification_ids, status: 'failed', error: (typeof $json.error === 'string' ? $json.error : ($json.error && $json.error.message)) || $json.message || 'n8n email workflow failed' } }}",
         "options": {}
       },
       "id": "1590b3ad-cd6e-48db-b58e-06444939aecf",

@@ -10,6 +10,8 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+deploy/azure/env.production
+frontend/env.production
 
 # Python backend
 backend/.venv/

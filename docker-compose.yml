@@ -19,11 +19,20 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+    # Root .env is canonical. frontend/.env remains a local compatibility
+    # source for existing setups and is overridden when the root defines a key.
+    env_file:
+      - path: ./frontend/.env
+        required: false
+      - path: ./.env
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DATABASE_URL: postgresql+psycopg://vidyut:vidyut@postgres:5432/vidyut
-      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
-      N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN:-}
-      N8N_CALLBACK_TOKEN: ${N8N_CALLBACK_TOKEN:-}
+      # Containers cannot use localhost to reach n8n or the published API.
+      N8N_WEBHOOK_URL: ${N8N_DOCKER_WEBHOOK_URL:-http://host.docker.internal:5678/webhook/vidyut-operator-digest}
+      VIDYUT_N8N_API_URL: ${VIDYUT_N8N_API_URL:-http://host.docker.internal:8000}
       VIDYUT_PUBLIC_API_URL: ${VIDYUT_PUBLIC_API_URL:-http://localhost:8000}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     depends_on:
