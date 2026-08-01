@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, OrbitControls } from "@react-three/drei";
 import { useReducedMotion } from "framer-motion";
 import { useMemo, useRef, useState } from "react";
@@ -38,15 +38,80 @@ function layout(dts: DtSnapshot[]): Placed[] {
 
 function House({ x, z, lit, selected }: { x: number; z: number; lit: boolean; selected: boolean }) {
   return <group position={[x, 0, z]}>
-    <mesh position={[0, .13, 0]} castShadow><boxGeometry args={[.3, .25, .28]} /><meshStandardMaterial color={lit ? "#d7edb9" : "#16221d"} emissive={lit ? PALETTE.accent : "#000000"} emissiveIntensity={lit ? selected ? .75 : .32 : 0} roughness={.9} /></mesh>
-    <mesh position={[0, .31, 0]} rotation={[0, Math.PI / 4, 0]} castShadow><coneGeometry args={[.25, .2, 4]} /><meshStandardMaterial color={lit ? "#849368" : "#202c26"} roughness={.95} /></mesh>
-    <mesh position={[0, .14, .145]}><planeGeometry args={[.1, .08]} /><meshBasicMaterial color={lit ? "#e9ff9b" : "#0a100d"} /></mesh>
+    <mesh position={[0, .14, 0]} castShadow><boxGeometry args={[.34, .28, .32]} /><meshStandardMaterial color={lit ? "#c8dcae" : "#16221d"} emissive={lit ? PALETTE.accent : "#000000"} emissiveIntensity={lit ? selected ? .75 : .25 : 0} roughness={.9} /></mesh>
+    <mesh position={[0, .36, 0]} rotation={[0, Math.PI / 4, 0]} castShadow><coneGeometry args={[.28, .2, 4]} /><meshStandardMaterial color={lit ? "#637756" : "#202c26"} roughness={.95} /></mesh>
+    <mesh position={[-.105, .14, .165]}><planeGeometry args={[.07, .08]} /><meshBasicMaterial color={lit ? "#f0ffaf" : "#0a100d"} /></mesh>
+    <mesh position={[.105, .14, .165]}><planeGeometry args={[.07, .08]} /><meshBasicMaterial color={lit ? "#f0ffaf" : "#0a100d"} /></mesh>
   </group>;
+}
+
+function MovingCar({ offset, lane, color }: { offset: number; lane: number; color: string }) {
+  const car = useRef<THREE.Group>(null);
+  useFrame((clock) => {
+    if (!car.current) return;
+    const travel = ((clock.clock.elapsedTime * .58 + offset) % 1) * 23 - 11.5;
+    car.current.position.x = lane % 2 ? travel : lane;
+    car.current.position.z = lane % 2 ? lane : travel;
+    car.current.rotation.y = lane % 2 ? Math.PI / 2 : 0;
+  });
+  return <group ref={car} position={[0, .12, 0]}>
+    <mesh castShadow><boxGeometry args={[.23, .11, .46]} /><meshStandardMaterial color={color} metalness={.35} roughness={.35} emissive={color} emissiveIntensity={.12} /></mesh>
+    <pointLight position={[0, .02, .25]} color="#f0ffb5" intensity={.5} distance={1.4} />
+  </group>;
+}
+
+function CityLife() {
+  const clouds = useRef<THREE.Group>(null);
+  const birds = useRef<THREE.Group>(null);
+  useFrame((clock) => {
+    const t = clock.clock.elapsedTime;
+    if (clouds.current) clouds.current.position.x = Math.sin(t * .035) * 2;
+    if (birds.current) { birds.current.position.x = Math.sin(t * .14) * 4; birds.current.position.y = 6.8 + Math.sin(t * .7) * .16; }
+  });
+  return <>
+    <group ref={clouds} position={[-4, 8, -8]}>{[[-2, 0, 0], [-.5, .15, .3], [1.2, -.05, -.1], [3, .2, .5]].map(([x, y, z], index) => <mesh key={index} position={[x, y, z]}><sphereGeometry args={[1.05, 12, 10]} /><meshBasicMaterial color="#789198" transparent opacity={.045} /></mesh>)}</group>
+    <group ref={birds}>{[-.8, 0, .8].map((x) => <mesh key={x} position={[x, 0, x * .35]} rotation={[0, 0, -.3]}><coneGeometry args={[.06, .26, 3]} /><meshBasicMaterial color="#9eb4a5" transparent opacity={.55} /></mesh>)}</group>
+    <MovingCar offset={.05} lane={-5.8} color="#75e2af" /><MovingCar offset={.48} lane={2.1} color="#ffc857" /><MovingCar offset={.72} lane={-7.25} color="#70b7ff" /><MovingCar offset={.24} lane={7.25} color="#d5e4dc" />
+  </>;
+}
+
+function CivicAssets() {
+  const tank = useRef<THREE.Group>(null);
+  useFrame((clock) => { if (tank.current) tank.current.rotation.y = Math.sin(clock.clock.elapsedTime * .12) * .03; });
+  return <>
+    <group position={[7.5, 0, 4.8]}>{[0, 1, 2].map((x) => <mesh key={x} position={[x * .34, .36, 0]}><boxGeometry args={[.28, .72, .4]} /><meshStandardMaterial color="#42534d" emissive="#16422e" emissiveIntensity={.25} /></mesh>)}<mesh position={[.34, .77, 0]}><planeGeometry args={[.78, .36]} /><meshBasicMaterial color="#75e2af" transparent opacity={.75} /></mesh></group>
+    <group position={[-7.8, 0, 4.65]}><mesh position={[0, .55, 0]}><boxGeometry args={[1.55, 1.1, .8]} /><meshStandardMaterial color="#c6d4c4" emissive="#75e2af" emissiveIntensity={.1} /></mesh><mesh position={[0, 1.17, 0]}><coneGeometry args={[.75, .35, 4]} /><meshStandardMaterial color="#4b6060" /></mesh><mesh position={[0, .55, .41]}><boxGeometry args={[.14, .68, .02]} /><meshBasicMaterial color="#75e2af" /></mesh></group>
+    <group position={[-7.9, 0, -3.4]}><mesh position={[0, .5, 0]}><boxGeometry args={[1.9, 1, .9]} /><meshStandardMaterial color="#9aadb1" emissive="#70b7ff" emissiveIntensity={.12} /></mesh><mesh position={[0, 1.12, 0]}><boxGeometry args={[2.05, .12, 1.04]} /><meshStandardMaterial color="#47615f" /></mesh>{[-.6, 0, .6].map((x) => <mesh key={x} position={[x, .58, .46]}><planeGeometry args={[.32, .36]} /><meshBasicMaterial color="#70b7ff" transparent opacity={.8} /></mesh>)}</group>
+    <group ref={tank} position={[7.4, 0, -4.2]}><mesh position={[0, 1.05, 0]}><cylinderGeometry args={[.5, .5, .76, 16]} /><meshStandardMaterial color="#8da5a1" metalness={.5} roughness={.35} /></mesh><mesh position={[0, 1.48, 0]}><sphereGeometry args={[.51, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2]} /><meshStandardMaterial color="#b7cfca" /></mesh>{[-.28, .28].flatMap((x) => [-.28, .28].map((z) => <mesh key={`${x}-${z}`} position={[x, .38, z]}><cylinderGeometry args={[.045, .045, .76, 6]} /><meshStandardMaterial color="#5d6e68" /></mesh>))}</group>
+  </>;
+}
+
+function Tree({ x, z, scale = 1 }: { x: number; z: number; scale?: number }) {
+  return <group position={[x, 0, z]} scale={scale}>
+    <mesh position={[0, .16, 0]} castShadow><cylinderGeometry args={[.035, .05, .32, 6]} /><meshStandardMaterial color="#6b5636" roughness={1} /></mesh>
+    <mesh position={[0, .44, 0]} rotation={[0, 0, (x + z) * .03]} castShadow><coneGeometry args={[.22, .38, 7]} /><meshStandardMaterial color="#244b32" emissive="#102b1b" emissiveIntensity={.3} roughness={.9} /></mesh>
+  </group>;
+}
+
+function CityGround() {
+  const trees = useMemo(() => Array.from({ length: 54 }, (_, index) => {
+    const column = index % 9;
+    const row = Math.floor(index / 9);
+    return { x: -8.6 + column * 2.15 + (row % 2 ? .38 : 0), z: -4.5 + row * 2.1, scale: .65 + (index % 4) * .1 };
+  }), []);
+  return <>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -.05, 0]} receiveShadow><planeGeometry args={[29, 23]} /><meshStandardMaterial color="#0a1711" roughness={1} /></mesh>
+    {[-5.8, -1.85, 2.1, 6.05].map((z) => <mesh key={`road-x-${z}`} position={[0, -.025, z]} rotation={[-Math.PI / 2, 0, 0]}><planeGeometry args={[29, .5]} /><meshBasicMaterial color="#17221e" /></mesh>)}
+    {[-7.25, -2.4, 2.4, 7.25].map((x) => <mesh key={`road-z-${x}`} position={[x, -.024, 0]} rotation={[-Math.PI / 2, 0, Math.PI / 2]}><planeGeometry args={[.45, 23]} /><meshBasicMaterial color="#17221e" /></mesh>)}
+    {trees.map((tree, index) => <Tree key={index} {...tree} />)}
+    {[-7.25, -2.4, 2.4, 7.25].flatMap((x) => [-4.7, -2.55, -.4, 1.75, 3.9].map((z) => <group key={`${x}-${z}`} position={[x, 0, z]}><mesh position={[0, .45, 0]}><cylinderGeometry args={[.025, .035, .9, 6]} /><meshStandardMaterial color="#53635b" metalness={.6} /></mesh><mesh position={[0, .92, 0]}><sphereGeometry args={[.075, 8, 6]} /><meshBasicMaterial color="#fff2bb" /></mesh><pointLight position={[0, .92, 0]} color="#dfffa8" intensity={.35} distance={1.25} /></group>))}
+  </>;
 }
 
 function Locality({ placed, intervened, onHover, onSelect, selected }: { placed: Placed; intervened: boolean; onHover: (dt: DtSnapshot | null) => void; onSelect: (id: string) => void; selected: boolean }) {
   const body = useRef<THREE.Mesh>(null);
   const ring = useRef<THREE.Mesh>(null);
+  const fan = useRef<THREE.Mesh>(null);
   const { dt, position, side } = placed;
   const state = stateOf(dt.loading_pct, dt.energized);
   const target = useMemo(() => new THREE.Color(PALETTE[state]), [state]);
@@ -66,14 +131,16 @@ function Locality({ placed, intervened, onHover, onSelect, selected }: { placed:
       material.color.set(state === "overloaded" ? PALETTE.overloaded : PALETTE.accent);
       ring.current.scale.setScalar(1 + alarm * .45);
     }
+    if (fan.current) fan.current.rotation.z = clock.clock.elapsedTime * (2 + dt.loading_pct / 18);
   });
 
   return <group position={position} onPointerOver={(event) => { event.stopPropagation(); onHover(dt); document.body.style.cursor = "pointer"; }} onPointerOut={() => { onHover(null); document.body.style.cursor = "auto"; }} onClick={(event) => { event.stopPropagation(); onSelect(dt.id); }}>
     <mesh position={[0, .05, 0]}><cylinderGeometry args={[.34, .42, .1, 8]} /><meshStandardMaterial color="#203029" roughness={.8} /></mesh>
     <mesh ref={body} position={[0, .38, 0]} castShadow><boxGeometry args={[.34, .62, .34]} /><meshStandardMaterial color={PALETTE[state]} emissive={PALETTE[state]} emissiveIntensity={.4} metalness={.35} roughness={.3} /></mesh>
     <mesh position={[0, .75, 0]}><cylinderGeometry args={[.045, .045, .35, 8]} /><meshStandardMaterial color="#73847b" metalness={.6} /></mesh>
+    <mesh ref={fan} position={[.18, .39, .18]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[.11, .025, 6, 12]} /><meshStandardMaterial color="#9fb2a7" metalness={.7} /></mesh>
     <mesh ref={ring} position={[0, .035, 0]} rotation={[-Math.PI / 2, 0, 0]}><ringGeometry args={[.43, .58, 28]} /><meshBasicMaterial transparent opacity={0} side={THREE.DoubleSide} /></mesh>
-    {[[-side * .52, -.27], [-side * .78, .02], [-side * .52, .31]].map(([offsetX, offsetZ], index) => <House key={index} x={offsetX} z={offsetZ} lit={dt.energized && index / 3 >= darkRatio} selected={selected} />)}
+    {[[-side * .48, -.31], [-side * .78, -.06], [-side * .55, .25], [-side * .86, .37]].map(([offsetX, offsetZ], index) => <House key={index} x={offsetX} z={offsetZ} lit={dt.energized && index / 4 >= darkRatio} selected={selected} />)}
     {selected && <Html center position={[0, 1.2, 0]} distanceFactor={13}><div className="twin-selected-tag"><span>{dt.id}</span><strong>{dt.loading_pct.toFixed(0)}%</strong></div></Html>}
   </group>;
 }
@@ -117,32 +184,50 @@ function CriticalFacility({ uptime }: { uptime: number }) {
   </group>;
 }
 
-function Scene({ snapshot, activeTargets, selectedDt, onSelect, onHover, reduced, presentation }: { snapshot: ArmSnapshot; activeTargets: Set<string>; selectedDt: string; onSelect: (id: string) => void; onHover: (dt: DtSnapshot | null) => void; reduced: boolean; presentation: boolean }) {
+function CameraRig({ sceneIndex, presentation }: { sceneIndex: number; presentation: boolean }) {
+  const { camera, mouse } = useThree();
+  const target = useRef(new THREE.Vector3());
+  const paths: [number, number, number][] = [[0, 11.8, 15.5], [-5.8, 8.2, 13.2], [6.8, 7.3, 12.4], [3.5, 6, 9.2], [-4.8, 5.8, 9.8], [0, 10.8, 14.2], [4.4, 8.5, 11.4], [0, 12.5, 16.2]];
+  useFrame((clock, delta) => {
+    const p = paths[sceneIndex % paths.length];
+    const breath = presentation ? Math.sin(clock.clock.elapsedTime * .45) * .18 : 0;
+    const desired = new THREE.Vector3(p[0] + mouse.x * .35, p[1] + breath + mouse.y * .2, p[2]);
+    camera.position.lerp(desired, 1 - Math.exp(-delta * 1.1));
+    target.current.lerp(new THREE.Vector3(0, .25, sceneIndex === 3 ? 1.4 : 0), 1 - Math.exp(-delta * 1.4));
+    camera.lookAt(target.current);
+  });
+  return null;
+}
+
+function Scene({ snapshot, activeTargets, selectedDt, onSelect, onHover, reduced, presentation, sceneIndex }: { snapshot: ArmSnapshot; activeTargets: Set<string>; selectedDt: string; onSelect: (id: string) => void; onHover: (dt: DtSnapshot | null) => void; reduced: boolean; presentation: boolean; sceneIndex: number }) {
   const placed = useMemo(() => layout(snapshot.dts), [snapshot.dts]);
   return <>
-    <fog attach="fog" args={["#07110e", 11, 28]} />
-    <ambientLight intensity={.72} />
-    <directionalLight position={[4, 12, 5]} intensity={1.45} castShadow />
+    <fog attach="fog" args={[sceneIndex === 3 ? "#5b5848" : "#b9c5c2", 12, 34]} />
+    <ambientLight intensity={.98} />
+    <hemisphereLight args={["#e6efeb", "#123324", .85]} />
+    <directionalLight position={[4, 12, 5]} intensity={1.75} castShadow />
     <pointLight position={[0, 5, -6]} intensity={30} color={PALETTE.accent} distance={18} />
     <Substation />
     <CriticalFacility uptime={snapshot.metrics.critical_uptime_pct} />
+    <CivicAssets />
+    <CityLife />
     {FEEDER_X.map((x, index) => <Feeder key={x} x={x} loading={snapshot.feeders[index]?.loading_pct ?? 0} id={snapshot.feeders[index]?.id ?? `F${index + 1}`} />)}
     {placed.map((item) => <Locality key={item.dt.id} placed={item} intervened={activeTargets.has(item.dt.id)} selected={selectedDt === item.dt.id} onSelect={onSelect} onHover={onHover} />)}
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -.03, 0]} receiveShadow><planeGeometry args={[22, 17]} /><meshStandardMaterial color="#08130e" roughness={1} /></mesh>
-    {[-6.9, -2.4, 2.2].map((z) => <mesh key={z} position={[0, -.015, z]} rotation={[-Math.PI / 2, 0, 0]}><planeGeometry args={[17, .45]} /><meshBasicMaterial color="#101d18" /></mesh>)}
-    <gridHelper args={[22, 22, "#1b2f26", "#102019"]} position={[0, -.02, 0]} />
-    <OrbitControls enablePan={false} enableDamping minDistance={8} maxDistance={22} minPolarAngle={.25} maxPolarAngle={Math.PI / 2.18} autoRotate={!reduced} autoRotateSpeed={presentation ? .22 : .12} />
+    <CityGround />
+    <gridHelper args={[29, 29, "#183127", "#102019"]} position={[0, -.02, 0]} />
+    <CameraRig sceneIndex={sceneIndex} presentation={presentation} />
+    <OrbitControls enablePan={false} enableDamping dampingFactor={.06} minDistance={8} maxDistance={24} minPolarAngle={.25} maxPolarAngle={Math.PI / 2.18} autoRotate={!reduced} autoRotateSpeed={presentation ? .18 : .07} />
   </>;
 }
 
-export function Network3D({ snapshot, label, selectedDt, onSelect, activeTargets = new Set<string>(), presentation = false }: { snapshot: ArmSnapshot; label: string; selectedDt: string; onSelect: (id: string) => void; activeTargets?: Set<string>; presentation?: boolean }) {
+export function Network3D({ snapshot, label, selectedDt, onSelect, activeTargets = new Set<string>(), presentation = false, sceneIndex = 0 }: { snapshot: ArmSnapshot; label: string; selectedDt: string; onSelect: (id: string) => void; activeTargets?: Set<string>; presentation?: boolean; sceneIndex?: number }) {
   const [hovered, setHovered] = useState<DtSnapshot | null>(null);
   const reduced = Boolean(useReducedMotion());
   const selected = snapshot.dts.find((dt) => dt.id === selectedDt);
   const inspected = hovered ?? selected;
   return <div className={`twin-stage ${presentation ? "presentation" : ""}`}>
-    <Canvas camera={{ position: [0, 10.5, 13.5], fov: 42 }} dpr={[1, 1.5]} shadows gl={{ antialias: true, powerPreference: "high-performance" }}>
-      <Scene snapshot={snapshot} activeTargets={activeTargets} selectedDt={selectedDt} onSelect={onSelect} onHover={setHovered} reduced={reduced} presentation={presentation} />
+    <Canvas camera={{ position: [0, 11.8, 15.5], fov: 43 }} dpr={[1, 1.2]} gl={{ alpha: true, antialias: true, powerPreference: "high-performance" }}>
+      <Scene snapshot={snapshot} activeTargets={activeTargets} selectedDt={selectedDt} onSelect={onSelect} onHover={setHovered} reduced={reduced} presentation={presentation} sceneIndex={sceneIndex} />
     </Canvas>
     <div className="twin-readout">{inspected ? <><span>{inspected.energized ? "LOCALITY ENERGISED" : "LOCALITY OFFLINE"}</span><strong>{inspected.id}</strong><small>{inspected.loading_pct.toFixed(1)}% of limit · {inspected.households_dark} homes dark</small></> : <><span>SPATIAL NETWORK</span><strong>{label}</strong><small>Select a locality to inspect its transformer and homes.</small></>}</div>
     <div className="twin-key">{(["stable", "strained", "overloaded", "offline"] as const).map((state) => <span key={state}><i style={{ background: PALETTE[state] }} />{state}</span>)}</div>

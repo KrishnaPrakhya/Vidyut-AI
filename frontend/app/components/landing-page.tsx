@@ -2,8 +2,8 @@
 
 import dynamic from "next/dynamic";
 import Image from "next/image";
-import { motion, useReducedMotion, useScroll, useTransform } from "framer-motion";
-import { useEffect, useMemo, useState } from "react";
+import { motion, useInView, useReducedMotion, useScroll, useTransform } from "framer-motion";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ArmName, Recording } from "../types";
 import { formatNumber } from "../lib/replay";
 
@@ -20,7 +20,7 @@ type LandingPageProps = {
 };
 
 type HeroBeat = {
-  id: "surge" | "blackout" | "protected";
+  id: string;
   arm: ArmName;
   tick: number;
   label: string;
@@ -48,12 +48,43 @@ function Neighborhood({ dark, label }: { dark: number; label: string }) {
   </div>;
 }
 
+function GridSimulation({ mode, phase, load, savedHomes }: { mode: "traditional" | "vidyut"; phase: number; load: number; savedHomes: number }) {
+  const protectedGrid = mode === "vidyut";
+  const tripped = !protectedGrid && phase >= 3;
+  const predicted = protectedGrid && phase === 2;
+  const recommended = protectedGrid && phase >= 4;
+  const stable = protectedGrid && phase >= 5;
+  const visibleLoad = tripped ? 104 : stable ? 81 : phase >= 2 ? 93 : phase === 1 ? 84 : 65;
+  return <article className={`grid-simulation ${mode} phase-${phase}`}>
+    <header><span>{protectedGrid ? "With Vidyut" : "Traditional grid"}</span><i /></header>
+    <div className="sim-network" aria-label={`${protectedGrid ? "Vidyut" : "Traditional"} electrical network simulation`}>
+      <div className="sim-node substation"><b>PRIMARY</b><small>33 kV</small></div><div className="sim-link"><i /></div>
+      <div className="sim-node feeder"><b>MAIN FEEDER</b><small>{tripped ? "DISCONNECTED" : protectedGrid && phase >= 4 ? "AI REROUTE ACTIVE" : "ENERGISED"}</small></div><div className="sim-link"><i /></div>
+      <div className={`sim-node transformer ${tripped ? "critical" : predicted ? "warning" : "healthy"}`}><b>DT-17</b><strong>{visibleLoad}%</strong><small>{tripped ? "PROTECTION TRIP" : predicted ? "OVERLOAD IN 18 MIN" : `${load.toFixed(0)}% nominal load`}</small></div>
+      <div className="sim-branches"><i /><i /><i /></div>
+      <div className={`sim-assets ${tripped ? "dark" : "lit"}`}><span>Neighborhood A</span><span>Neighborhood B</span><span className="priority">+ Hospital</span><span>School</span><span>EV charging</span><span>Homes</span></div>
+      {tripped && <div className="sim-disruption"><strong>70 homes without power</strong><span>Transformer failed · power interrupted</span></div>}
+      {predicted && <div className="prediction-card"><span>Prediction</span><strong>Transformer DT-17</strong><p>Overload in <b>18 minutes</b> · 96% confidence</p></div>}
+      {protectedGrid && phase === 3 && <div className="thinking-stack"><span>Collecting grid data</span><span>Forecasting demand</span><span>Checking feeder capacity</span><span>Finding flexible loads</span><b>Generating recommendation</b></div>}
+      {recommended && <div className="ai-recommendation"><span>AI recommendation</span><strong>Delay EV charging <b>12 min</b></strong><strong>Reduce water-heater load <b>8%</b></strong><strong>Shift flexible load <b>14%</b></strong><div className="recommendation-accepted">AI Recommendation Accepted <b>✓</b></div><small>Predicted transformer load <b>81%</b> · expected result: <b>No blackout</b></small><div className="estimated-savings"><span>Estimated savings</span><b>{savedHomes || 70} homes remain powered</b><b>1 hospital uninterrupted</b><b>18 minutes of overload avoided</b></div></div>}
+    </div>
+    <footer><strong>{tripped ? "104%" : stable ? "81%" : `${visibleLoad}%`}</strong><span>{tripped ? "protection trip · feeder offline" : stable ? "all homes powered · transformer stable" : protectedGrid ? "forecast-controlled network" : "transformer loading"}</span></footer>
+  </article>;
+}
+
 export function LandingPage({ recording, online, onEnter, onWatch }: LandingPageProps) {
   const reduced = useReducedMotion();
   const { scrollYProgress } = useScroll();
   const progress = useTransform(scrollYProgress, [0, 1], ["0%", "100%"]);
   const [selectedDt, setSelectedDt] = useState("F1-DT17");
   const [heroBeatIndex, setHeroBeatIndex] = useState(0);
+  const [isGuided, setIsGuided] = useState(true);
+  const [presentationMode, setPresentationMode] = useState(false);
+  // Open on the decisive contrast so judges do not have to wait through the normal state.
+  const [comparisonPhase, setComparisonPhase] = useState(4);
+  const [comparisonPlaying, setComparisonPlaying] = useState(true);
+  const comparisonRef = useRef<HTMLElement>(null);
+  const comparisonInView = useInView(comparisonRef, { amount: .32 });
   const focusTick = recording?.ticks[67] ?? recording?.ticks[0];
   const baselineDt = focusTick?.arms.baseline.dts.find((dt) => dt.id === selectedDt);
   const vidyutDt = focusTick?.arms.vidyut.dts.find((dt) => dt.id === selectedDt);
@@ -96,6 +127,11 @@ export function LandingPage({ recording, online, onEnter, onWatch }: LandingPage
   const surgeTick = Math.max(0, eventTick - 3);
   const savedHomes = Math.max(0, (divergence?.baselineDark ?? 70) - (divergence?.vidyutDark ?? 0));
   const heroBeats: HeroBeat[] = [
+    { id: "healthy", arm: "vidyut", tick: Math.max(0, surgeTick - 10), label: "01 / Grid healthy", title: "A living neighborhood, continuously protected.", body: "The digital twin sees feeders, homes and critical services as one connected operating picture.", metric: "Grid healthy", metricLabel: "all services energised" },
+    { id: "demand", arm: "baseline", tick: Math.max(surgeTick, eventTick - 2), label: "02 / Demand rising", title: "The feeder is approaching its safe operating limit.", body: "The twin makes mounting pressure visible before protection has to react.", metric: "Load climbing", metricLabel: "network risk detected" },
+    { id: "prediction", arm: "vidyut", tick: Math.max(surgeTick, eventTick - 2), label: "03 / AI prediction", title: "Vidyut sees the risk before it becomes an outage.", body: "Forecasts compare the next hour of demand with transformer and feeder capacity.", metric: "1 hour ahead", metricLabel: "forecast window" },
+    { id: "recommendation", arm: "vidyut", tick: eventTick, label: "04 / Recommendation", title: "Small, local action keeps the city balanced.", body: "The response adjusts flexible demand only where the model shows it will protect the neighborhood.", metric: "Action ready", metricLabel: "local and temporary" },
+    { id: "reroute", arm: "vidyut", tick: eventTick, label: "05 / Electricity reroute", title: "Electricity keeps moving to the loads that matter.", body: "Glowing flows represent the feeder topology while critical medical loads stay available.", metric: "Critical loads on", metricLabel: "essential care protected" },
     {
       id: "surge",
       arm: "baseline",
@@ -137,10 +173,16 @@ export function LandingPage({ recording, online, onEnter, onWatch }: LandingPage
   );
 
   useEffect(() => {
-    if (reduced || !recording) return;
+    if (reduced || !recording || !isGuided) return;
     const timer = window.setTimeout(() => setHeroBeatIndex((current) => (current + 1) % heroBeats.length), 4400);
     return () => window.clearTimeout(timer);
-  }, [heroBeatIndex, recording, reduced, heroBeats.length]);
+  }, [heroBeatIndex, recording, reduced, heroBeats.length, isGuided]);
+
+  useEffect(() => {
+    if (reduced || !comparisonInView || !comparisonPlaying) return;
+    const timer = window.setTimeout(() => setComparisonPhase((current) => (current + 1) % 6), 2400);
+    return () => window.clearTimeout(timer);
+  }, [comparisonPhase, comparisonInView, reduced, comparisonPlaying]);
 
   return <motion.main className="landing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
     <motion.div className="scroll-progress" style={{ width: progress }} />
@@ -156,11 +198,11 @@ export function LandingPage({ recording, online, onEnter, onWatch }: LandingPage
       <button className="nav-launch" type="button" onClick={onEnter}>Open interactive demo <span>↗</span></button>
     </header>
 
-    <section className="landing-hero">
+    <section className={`landing-hero ${presentationMode ? "presentation-mode" : ""}`}>
       <motion.div className="hero-copy" initial={{ opacity: 0, y: reduced ? 0 : 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .7 }}>
-        <div className="system-line"><i className={online ? "online" : ""} /><span>Recorded heatwave demo</span><strong>{online ? "See one neighborhood avoid a blackout" : "Ready to replay"}</strong></div>
-        <h1>Stop the blackout<br /><em>before</em> your street<br />goes dark.</h1>
-        <p>On the hottest evening of the year, electricity use can surge until an entire street loses power. Vidyut spots the danger early, makes small temporary adjustments, and keeps homes and critical medical loads powered.</p>
+        <div className="system-line"><i className={online ? "online" : ""} /><span>Digital twin online</span><strong>{online ? "Live grid intelligence" : "Recorded grid intelligence"}</strong></div>
+        <h1>Prevent Blackouts<br /><em>Before They Happen.</em></h1>
+        <p>AI predicts transformer overloads before they happen and intelligently balances electrical demand across the neighborhood.</p>
         <div className="hero-actions">
           <button className="hero-primary" type="button" onClick={onWatch}>See Vidyut stop the blackout <span>▶</span></button>
           <button className="hero-secondary" type="button" onClick={onEnter}>Try the interactive demo <span>→</span></button>
@@ -171,13 +213,14 @@ export function LandingPage({ recording, online, onEnter, onWatch }: LandingPage
       <motion.div className={`hero-twin phase-${activeHeroBeat.id}`} initial={{ opacity: 0, scale: reduced ? 1 : .96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: .8, delay: .15 }}>
         <div className="hero-twin-head"><span><i />Recorded neighborhood · {heroFrame?.clock ?? "16:45"}</span><strong>{activeHeroBeat.label}</strong></div>
         <div className="hero-model-key" aria-label="3D model key"><span><i className="home" />Small houses</span><span><i className="power" />Neighborhood power units</span><span><i className="care">+</i>Critical facility</span></div>
-        {heroSnapshot ? <Network3D snapshot={heroSnapshot} label="Recorded neighborhood power network" selectedDt={heroSelectedDt} onSelect={setSelectedDt} activeTargets={heroActiveTargets} presentation /> : <div className="twin-loading"><i /><span>Loading the neighborhood</span></div>}
+        {heroSnapshot ? <Network3D snapshot={heroSnapshot} label="Recorded neighborhood power network" selectedDt={heroSelectedDt} onSelect={setSelectedDt} activeTargets={heroActiveTargets} presentation sceneIndex={heroBeatIndex} /> : <div className="twin-loading"><i /><span>Loading the neighborhood</span></div>}
+        <div className="hero-demo-controls"><button type="button" onClick={() => setIsGuided((playing) => !playing)}>{isGuided ? "Pause story" : "Resume story"}</button><button type="button" onClick={() => { setHeroBeatIndex(0); setIsGuided(true); }}>Replay</button><button type="button" onClick={() => setPresentationMode((active) => !active)}>{presentationMode ? "Exit presentation" : "Presentation mode"}</button></div>
         <motion.div key={activeHeroBeat.id} className="hero-story-card" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .35 }}>
           <span>{activeHeroBeat.label}</span>
           <strong>{activeHeroBeat.title}</strong>
           <p>{activeHeroBeat.body}</p>
           <div className="hero-beat-controls" role="group" aria-label="Neighborhood blackout story">
-            {heroBeats.map((beat, index) => <button key={beat.id} type="button" className={index === heroBeatIndex ? "active" : ""} onClick={() => setHeroBeatIndex(index)} aria-pressed={index === heroBeatIndex}><i />{beat.id === "surge" ? "Demand rises" : beat.id === "blackout" ? "Without Vidyut" : "With Vidyut"}</button>)}
+            {heroBeats.map((beat, index) => <button key={beat.id} type="button" className={index === heroBeatIndex ? "active" : ""} onClick={() => { setHeroBeatIndex(index); setIsGuided(false); }} aria-label={beat.label} aria-pressed={index === heroBeatIndex}><i />{String(index + 1).padStart(2, "0")}</button>)}
           </div>
         </motion.div>
         <div className="hero-impact-badge"><span>{activeHeroBeat.id === "surge" ? "What happens next" : activeHeroBeat.id === "blackout" ? "People affected" : "People protected"}</span><strong>{activeHeroBeat.metric}</strong><small>{activeHeroBeat.metricLabel}</small></div>
@@ -241,7 +284,7 @@ export function LandingPage({ recording, online, onEnter, onWatch }: LandingPage
       </div>
     </section>
 
-    <section className="blackout-comparison">
+    <section className="blackout-comparison" ref={comparisonRef}>
       <div className="comparison-copy">
         <span className="landing-kicker">SAME DEMAND · DIFFERENT CONTROL</span>
         <h2>One event. Two outcomes.</h2>
@@ -252,7 +295,13 @@ export function LandingPage({ recording, online, onEnter, onWatch }: LandingPage
         </p>
       </div>
 
-      <div className="outcome-pair">
+      <div className="comparison-simulation">
+        <GridSimulation mode="traditional" phase={comparisonPhase} load={baselineDt?.loading_pct ?? 65} savedHomes={savedHomes} />
+        <div className="simulation-divider"><span>same</span><b>VS</b><span>demand</span></div>
+        <GridSimulation mode="vidyut" phase={comparisonPhase} load={vidyutDt?.loading_pct ?? 65} savedHomes={savedHomes} />
+      </div>
+      <div className="simulation-progress" role="group" aria-label="Simulation timeline">{["Normal", "Heatwave", "Prediction", "AI recommendation", "Reroute", "Stabilized"].map((label, index) => <button type="button" className={index === comparisonPhase ? "active" : index < comparisonPhase ? "complete" : ""} onClick={() => { setComparisonPhase(index); setComparisonPlaying(false); }} key={label}>{label}</button>)}<button type="button" className="simulation-autoplay" onClick={() => setComparisonPlaying((playing) => !playing)}>{comparisonPlaying ? "Pause" : "Play"}</button></div>
+      <div className="outcome-pair legacy-outcome-pair">
         <article className="outcome baseline">
           <header><span>Today&apos;s protection</span><i /></header>
           <Neighborhood dark={divergence?.baselineDark ?? 70} label="BASELINE" />
