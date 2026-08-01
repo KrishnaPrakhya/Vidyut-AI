@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -10,6 +11,7 @@ from dataclasses import dataclass
 from services.dispatch.outbox import Notification, Outbox
 
 WEBHOOK_ENV_VAR = "N8N_WEBHOOK_URL"
+WEBHOOK_TOKEN_ENV_VAR = "N8N_WEBHOOK_TOKEN"
 TIMEOUT_SECONDS = 4.0
 MAX_ATTEMPTS = 3
 RETRY_BASE_SECONDS = 0.25
@@ -45,13 +47,47 @@ def webhook_url() -> str | None:
     return url or None
 
 
+def webhook_token() -> str | None:
+    token = os.environ.get(WEBHOOK_TOKEN_ENV_VAR, "").strip()
+    return token or None
+
+
+@dataclass
+class OperatorDigestDispatchReport:
+    configured: bool
+    notification_count: int
+    accepted: bool = False
+    error: str | None = None
+
+    @property
+    def status(self) -> str:
+        if not self.configured:
+            return "not_configured"
+        if self.error:
+            return "unreachable"
+        return "accepted" if self.accepted else "empty"
+
+    def to_dict(self) -> dict:
+        return {
+            "status": self.status,
+            "configured": self.configured,
+            "accepted": self.accepted,
+            "notification_count": self.notification_count,
+            "error": self.error,
+        }
+
+
 def _post(url: str, payload: dict) -> None:
+    token = webhook_token()
+    if token is None:
+        raise ValueError("N8N_WEBHOOK_TOKEN is not configured")
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
             "Idempotency-Key": payload["idempotency_key"],
+            "X-Vidyut-Webhook-Token": token,
         },
         method="POST",
     )
@@ -67,7 +103,7 @@ def dispatch(
 ) -> DispatchReport:
     notifications = outbox.pending()
     url = webhook_url()
-    if url is None:
+    if url is None or webhook_token() is None:
         return DispatchReport(configured=False, attempted=len(notifications), delivered=0)
 
     delivered = 0
@@ -116,3 +152,46 @@ def dispatch(
         outbox.acknowledge(len(batch))
 
     return DispatchReport(configured=True, attempted=len(notifications), delivered=delivered)
+
+
+def dispatch_operator_digest(
+    outbox: Outbox,
+    recipient_email: str,
+    payload: dict,
+) -> OperatorDigestDispatchReport:
+    """Send one operator digest; the address is added only to the transient request."""
+    notifications = outbox.pending()
+    url = webhook_url()
+    if url is None or webhook_token() is None:
+        return OperatorDigestDispatchReport(False, len(notifications))
+    if not notifications:
+        return OperatorDigestDispatchReport(True, 0)
+
+    recipient_hash = hashlib.sha256(recipient_email.encode("utf-8")).hexdigest()[:16]
+    transport_payload = {
+        **payload,
+        "recipient": {"email": recipient_email, "role": "operator"},
+        "idempotency_key": f"operator-digest:{payload['run_id']}:{recipient_hash}",
+    }
+    error: Exception | None = None
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            _post(url, transport_payload)
+            error = None
+            break
+        except urllib.error.HTTPError as exc:
+            error = exc
+            if 400 <= exc.code < 500:
+                break
+        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+            error = exc
+        if attempt + 1 < MAX_ATTEMPTS:
+            time.sleep(RETRY_BASE_SECONDS * (2**attempt))
+    if error is not None:
+        return OperatorDigestDispatchReport(
+            True, len(notifications), error=str(error)
+        )
+
+    return OperatorDigestDispatchReport(
+        True, len(notifications), accepted=True
+    )

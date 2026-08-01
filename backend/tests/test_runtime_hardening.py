@@ -63,6 +63,7 @@ def test_expected_nonconvergence_is_reported(monkeypatch) -> None:
 
 def test_dispatch_retries_transient_failure(monkeypatch) -> None:
     monkeypatch.setenv("N8N_WEBHOOK_URL", "https://dispatch.invalid")
+    monkeypatch.setenv("N8N_WEBHOOK_TOKEN", "test-token")
     monkeypatch.setattr("services.dispatch.n8n.time.sleep", lambda seconds: None)
     attempts = []
 
@@ -78,4 +79,3 @@ def test_dispatch_retries_transient_failure(monkeypatch) -> None:
     assert report.delivered == 1
     assert len(attempts) == 3
     assert attempts[0]["idempotency_key"] == attempts[2]["idempotency_key"]
-

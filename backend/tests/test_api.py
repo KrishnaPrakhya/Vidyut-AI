@@ -43,6 +43,51 @@ def test_health_lists_scenarios(client: TestClient) -> None:
     body = client.get("/api/health").json()
     assert body["status"] == "ok"
     assert {"normal", "heatwave", "ev_surge"} <= set(body["scenarios"])
+    assert set(body["automation"]) == {
+        "n8n_webhook_configured",
+        "callback_auth_configured",
+        "public_api_url_configured",
+    }
+
+
+def test_operator_digest_requires_explicit_consent(
+    client: TestClient, ready_run: str
+) -> None:
+    response = client.post(
+        f"/api/runs/{ready_run}/notifications/dispatch",
+        json={"recipient_email": "operator@example.com", "consent": False},
+    )
+    assert response.status_code == 422
+
+
+def test_delivery_callback_is_closed_without_a_shared_secret(
+    client: TestClient, monkeypatch
+) -> None:
+    monkeypatch.delenv("N8N_CALLBACK_TOKEN", raising=False)
+    response = client.post(
+        "/api/runs/run-1/notifications/delivery",
+        json={"notification_ids": [1], "status": "delivered"},
+    )
+    assert response.status_code == 503
+
+
+def test_recorded_replays_are_discoverable_and_readable(client: TestClient) -> None:
+    catalog = client.get("/api/recordings")
+    assert catalog.status_code == 200
+    rows = catalog.json()["recordings"]
+    assert {"normal", "heatwave", "ev_surge"} <= {
+        row["scenario"] for row in rows
+    }
+
+    replay = client.get("/api/recordings/heatwave?seed=42")
+    assert replay.status_code == 200
+    assert replay.json()["meta"]["ticks"] == 96
+    assert len(replay.json()["ticks"]) == 96
+
+
+def test_unknown_recording_is_rejected(client: TestClient) -> None:
+    assert client.get("/api/recordings/monsoon?seed=42").status_code == 404
+    assert client.get("/api/recordings/heatwave?seed=999").status_code == 404
 
 
 def test_unknown_scenario_is_rejected(client: TestClient) -> None:

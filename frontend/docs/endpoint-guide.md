@@ -5,8 +5,8 @@ This guide explains the backend from a frontend developer's point of view. The e
 ## The normal frontend sequence
 
 1. Check the backend with `GET /api/health`.
-2. Load the scenario options with `GET /api/scenarios`.
-3. Create a simulation with `POST /api/runs`.
+2. For the instant demo, load `GET /api/recordings/{scenario}` and replay it locally.
+3. For a new experiment, create a simulation with `POST /api/runs`.
 4. Poll `GET /api/runs/{run_id}` until its status becomes `ready` or `failed`.
 5. Load the summary, flexibility and event endpoints for that run.
 6. Use the WebSocket only when animated tick-by-tick playback is needed.
@@ -35,6 +35,31 @@ Frontend use:
 
 - Populate the scenario selector from this response.
 - Display friendly labels such as “Normal day”, while sending the original value such as `normal` to the API.
+
+### `GET /api/recordings`
+
+Asks: “Which deterministic demonstration replays are available?”
+
+This returns a small catalog with scenario, seed, tick count and schema version. It does not load the large tick-by-tick payload.
+
+Frontend use:
+
+- Populate a recorded-demo selector.
+- Confirm the requested scenario and seed exist before showing a replay control.
+- Treat recordings as simulated evidence, not live telemetry.
+
+### `GET /api/recordings/{scenario}`
+
+Asks: “Give me the complete, already-computed day for this demonstration.”
+
+Pass `seed` as an optional query parameter; it defaults to `42`. The response contains all 96 synchronized frames for baseline and Vidyut, the final summary and notification list. It is ideal for an instant, deterministic judge demo because the browser can scrub without waiting for a simulation or making one request per tick.
+
+Frontend use:
+
+- Load once, retain in memory and drive the story and timeline from `ticks[currentIndex]`.
+- Read both arms from the same frame so comparisons always refer to the same clock time.
+- Build headline outcomes from `summary`; never hardcode demonstration numbers.
+- Use `meta.simulated` and the UI’s “Recorded” label to communicate provenance.
 
 ### `GET /api/observability/status`
 
@@ -307,6 +332,25 @@ Frontend use:
 - Injection changes a completed simulation and should be clearly labeled as a simulation action.
 - Database failures should not be presented as simulation failures.
 - Estimated weather-sensitive opportunity must not be presented as registered capacity or appliance detection.
+
+## Frontend agentic-copilot endpoint
+
+### `POST http://localhost:3000/api/ai/explain`
+
+Asks: “Explain this recorded grid interval using only its supplied evidence.”
+
+This is a Next.js server endpoint rather than a FastAPI simulation endpoint. It uses LangGraph to ground the frame, plan the request, route it to a specialist, verify numeric claims and optionally repair the draft. Supported intents are risk, baseline comparison, resident communication, incident summary and general analysis.
+
+Frontend use:
+
+- Send only curated frame fields; never send the entire run, secrets or untrusted external documents.
+- Render `evidence` beside the answer and expose `trace` as the agent audit path.
+- Treat `confidence` as grounding confidence, not forecast-model accuracy.
+- Keep the `advisory_only` and simulated-data labels visible.
+- Do not add actuation tools to this graph. Deterministic backend controllers remain the only source of simulated control events.
+- `GROQ_API_KEY` belongs in the frontend server environment and must never use a `NEXT_PUBLIC_` prefix.
+
+The endpoint returns 422 for incomplete context, 503 when the server key is absent and 502 when the model workflow is unavailable.
 
 ## Where to find exact formats
 

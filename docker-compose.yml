@@ -22,6 +22,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://vidyut:vidyut@postgres:5432/vidyut
       N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-}
+      N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN:-}
+      N8N_CALLBACK_TOKEN: ${N8N_CALLBACK_TOKEN:-}
+      VIDYUT_PUBLIC_API_URL: ${VIDYUT_PUBLIC_API_URL:-http://localhost:8000}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     depends_on:
       postgres:

@@ -3,8 +3,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from services.dispatch.n8n import dispatch
+from services.dispatch.n8n import dispatch, dispatch_operator_digest
 from services.dispatch.outbox import Notification, Outbox, clock_of
+from services.dispatch.rate_limit import DigestRateLimiter
 
 SIM_DIR = Path(__file__).resolve().parents[1] / "services" / "sim"
 
@@ -41,6 +42,7 @@ def test_dispatch_without_webhook_is_a_noop(monkeypatch) -> None:
 
 def test_dispatch_survives_unreachable_webhook(monkeypatch) -> None:
     monkeypatch.setenv("N8N_WEBHOOK_URL", "http://127.0.0.1:9/unreachable")
+    monkeypatch.setenv("N8N_WEBHOOK_TOKEN", "test-token")
     outbox = Outbox()
     outbox.add(_notification())
 
@@ -52,6 +54,7 @@ def test_dispatch_survives_unreachable_webhook(monkeypatch) -> None:
 
 def test_successful_dispatch_acknowledges_notifications(monkeypatch) -> None:
     monkeypatch.setenv("N8N_WEBHOOK_URL", "https://dispatch.invalid")
+    monkeypatch.setenv("N8N_WEBHOOK_TOKEN", "test-token")
     monkeypatch.setattr("services.dispatch.n8n._post", lambda url, payload: None)
     outbox = Outbox()
     outbox.add(_notification())
@@ -65,6 +68,7 @@ def test_successful_dispatch_acknowledges_notifications(monkeypatch) -> None:
 
 def test_dispatch_includes_persistent_notification_id(monkeypatch) -> None:
     monkeypatch.setenv("N8N_WEBHOOK_URL", "https://dispatch.invalid")
+    monkeypatch.setenv("N8N_WEBHOOK_TOKEN", "test-token")
     payloads = []
     monkeypatch.setattr(
         "services.dispatch.n8n._post", lambda url, payload: payloads.append(payload)
@@ -76,6 +80,48 @@ def test_dispatch_includes_persistent_notification_id(monkeypatch) -> None:
 
     assert report.delivered == 1
     assert payloads[0]["notifications"][0]["notification_id"] == 731
+
+
+def test_operator_digest_is_one_transient_delivery(monkeypatch) -> None:
+    monkeypatch.setenv("N8N_WEBHOOK_URL", "https://dispatch.invalid")
+    monkeypatch.setenv("N8N_WEBHOOK_TOKEN", "test-token")
+    payloads = []
+    monkeypatch.setattr(
+        "services.dispatch.n8n._post", lambda url, payload: payloads.append(payload)
+    )
+    outbox = Outbox([_notification(), _notification()])
+
+    report = dispatch_operator_digest(
+        outbox,
+        "operator@example.com",
+        {
+            "run_id": "run-1",
+            "kind": "operator_digest",
+            "notification_ids": [731, 732],
+        },
+    )
+
+    assert report.status == "accepted"
+    assert report.notification_count == 2
+    assert len(payloads) == 1
+    assert payloads[0]["recipient"] == {
+        "email": "operator@example.com",
+        "role": "operator",
+    }
+    assert payloads[0]["idempotency_key"].startswith("operator-digest:run-1:")
+    assert len(outbox.pending()) == 2
+
+
+def test_operator_digest_rate_limit_hashes_identifiers() -> None:
+    limiter = DigestRateLimiter(window_seconds=60)
+    for now in (0.0, 1.0, 2.0):
+        assert limiter.check("127.0.0.1", "operator@example.com", now).allowed
+
+    blocked = limiter.check("127.0.0.1", "operator@example.com", 3.0)
+
+    assert not blocked.allowed
+    assert blocked.retry_after_seconds > 0
+    assert all("operator@example.com" not in key for key in limiter._events)
 
 
 def test_simulation_never_calls_the_network() -> None:
