@@ -25,6 +25,7 @@ export default function Home() {
   const [online, setOnline] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -57,7 +58,7 @@ export default function Home() {
     }
     void loadRecording();
     return () => { active = false; };
-  }, [scenario]);
+  }, [scenario, loadAttempt]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -69,6 +70,12 @@ export default function Home() {
     setGeneratedRun(null);
     setScenario(value);
     setReplayMode(value === "heatwave" ? "story" : "explore");
+  }
+
+  function retryRecording() {
+    setError(null);
+    setLoading(true);
+    setLoadAttempt((attempt) => attempt + 1);
   }
 
   function enterConsole(nextView: AppView = "overview") {
@@ -109,7 +116,7 @@ export default function Home() {
               transition={{ duration: .2, ease: "easeOut" }}
             >
               {loading && <main className="loading-screen"><div className="loading-grid" aria-hidden="true">{Array.from({ length: 60 }, (_, index) => <i key={index} />)}</div><div><span>Loading recorded network</span><strong>{scenario.replaceAll("_", " ")}</strong><p>96 intervals · 60 transformers · two control strategies</p></div></main>}
-              {!loading && error && <main className="error-screen"><span>Replay unavailable</span><h1>The recorded scenario could not be loaded.</h1><p>{error}</p><p>Confirm the backend is running at <code>{API_URL}</code>.</p><button className="primary-action" onClick={() => window.location.reload()}>Try again</button></main>}
+              {!loading && error && <main className="error-screen"><span>Replay unavailable</span><h1>The recorded scenario could not be loaded.</h1><p>{error}</p><p>Confirm the backend is running at <code>{API_URL}</code>.</p><button className="primary-action" onClick={retryRecording}>Try again</button></main>}
               {!loading && activeRecording && view === "overview" && <CommandCenter key={`${scenario}-${generatedRun?.runId ?? "demo"}-overview`} recording={activeRecording} scenario={scenario} online={online} source={generatedRun ? { kind: "generated", runId: generatedRun.runId } : { kind: "demo" }} onOpenReplay={() => { setReplayMode("explore"); setView("replay"); }} onOpenSimulation={() => setView("simulate")} />}
               {!loading && activeRecording && view === "replay" && replayMode === "story" && <StoryMode recording={activeRecording} onExplore={() => setReplayMode("explore")} />}
               {!loading && activeRecording && view === "replay" && replayMode === "explore" && <ReplayDashboard recording={activeRecording} onStory={scenario === "heatwave" ? () => setReplayMode("story") : undefined} />}

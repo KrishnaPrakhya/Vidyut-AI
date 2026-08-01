@@ -119,7 +119,7 @@ export function ReplayDashboard({ recording, onStory }: Props) {
           <button type="button" className={networkView === "grid" ? "active" : ""} onClick={() => setNetworkView("grid")} aria-pressed={networkView === "grid"}>Grid</button>
           <button type="button" className={networkView === "spatial" ? "active" : ""} onClick={() => setNetworkView("spatial")} aria-pressed={networkView === "spatial"}>3D</button>
         </div>
-        {networkView === "spatial" && <div className="arm-switch" role="group" aria-label="Spatial strategy"><button type="button" className={spatialArm === "baseline" ? "active danger" : ""} onClick={() => setSpatialArm("baseline")}>Baseline</button><button type="button" className={spatialArm === "vidyut" ? "active" : ""} onClick={() => setSpatialArm("vidyut")}>Vidyut</button></div>}
+        {networkView === "spatial" && <div className="arm-switch" role="group" aria-label="Spatial strategy"><button type="button" className={spatialArm === "baseline" ? "active danger" : ""} onClick={() => setSpatialArm("baseline")} aria-pressed={spatialArm === "baseline"}>Baseline</button><button type="button" className={spatialArm === "vidyut" ? "active" : ""} onClick={() => setSpatialArm("vidyut")} aria-pressed={spatialArm === "vidyut"}>Vidyut</button></div>}
       </div>
 
       {networkView === "grid" ? <div className="network-compare">
@@ -171,12 +171,12 @@ export function ReplayDashboard({ recording, onStory }: Props) {
       <section className="timeline-panel">
         <div className="timeline-head">
           <div className="playback-controls">
-            <button type="button" className="play-button" onClick={() => { if (tick === recording.ticks.length - 1) setTick(0); setPlaying((value) => !value); }} aria-label={playing ? "Pause replay" : "Play replay"}>{playing ? "Ⅱ" : "▶"}</button>
+            <button type="button" className="play-button" onClick={() => { if (tick === recording.ticks.length - 1) setTick(0); setPlaying((value) => !value); }} aria-label={playing ? "Pause replay" : "Play replay"} aria-pressed={playing}>{playing ? "Ⅱ" : "▶"}</button>
             <button type="button" onClick={() => changeTick(Math.max(0, tick - 1))} aria-label="Previous interval">←</button>
             <button type="button" onClick={() => changeTick(Math.min(recording.ticks.length - 1, tick + 1))} aria-label="Next interval">→</button>
           </div>
           <div className="current-time"><strong>{frame.clock}</strong><span>Tick {tick + 1} of {recording.ticks.length}</span></div>
-          <div className="speed-controls" aria-label="Playback speed">{[1, 2, 4].map((value) => <button type="button" className={speed === value ? "active" : ""} onClick={() => setSpeed(value)} key={value}>{value}×</button>)}</div>
+          <div className="speed-controls" role="group" aria-label="Playback speed">{[1, 2, 4].map((value) => <button type="button" className={speed === value ? "active" : ""} onClick={() => setSpeed(value)} aria-pressed={speed === value} key={value}>{value}×</button>)}</div>
         </div>
 
         <div className="timeline-chart" aria-hidden="true">
