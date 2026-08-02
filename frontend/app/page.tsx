@@ -9,6 +9,7 @@ import { LandingPage } from "./components/landing-page";
 import { ReplayDashboard } from "./components/replay-dashboard";
 import { SimulationLab } from "./components/simulation-lab";
 import { StoryMode } from "./components/story-mode";
+import { DEFAULT_PREFERENCES, readPreferences } from "./lib/preferences";
 import { API_URL, api } from "./lib/replay";
 import type { Recording, ScenarioName } from "./types";
 
@@ -19,7 +20,7 @@ export default function Home() {
   const [surface, setSurface] = useState<Surface>("landing");
   const [view, setView] = useState<AppView>("overview");
   const [replayMode, setReplayMode] = useState<ReplayMode>("explore");
-  const [scenario, setScenario] = useState<ScenarioName>("heatwave");
+  const [scenario, setScenario] = useState<ScenarioName>(DEFAULT_PREFERENCES.scenario);
   const [recording, setRecording] = useState<Recording | null>(null);
   const [generatedRun, setGeneratedRun] = useState<{ recording: Recording; runId: string } | null>(null);
   const [online, setOnline] = useState(false);
@@ -58,6 +59,10 @@ export default function Home() {
     void loadRecording();
     return () => { active = false; };
   }, [scenario]);
+
+  useEffect(() => {
+    setScenario(readPreferences().scenario);
+  }, []);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });

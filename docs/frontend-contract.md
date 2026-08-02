@@ -4,7 +4,8 @@ Everything the UI needs from the backend. Every shape here was captured from a r
 not written from memory. Live samples sit in `docs/api-samples/`, and the full machine-readable
 spec is `docs/api-samples/openapi.json`.
 
-Base URL in development is `http://localhost:8000`. CORS is open to all origins.
+Base URL in development is `http://localhost:8000`. CORS defaults to `http://localhost:3000` and
+production origins are supplied through `CORS_ORIGINS`.
 
 ---
 

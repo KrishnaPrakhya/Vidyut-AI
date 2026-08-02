@@ -1,25 +1,51 @@
-# Vidyut operator digest automation
+# Vidyut operator-digest automation
 
-This workflow sends one real email to the evaluator acting as the distribution-system operator. It never pretends to contact simulated residents. The resident notification appears only as a labelled preview.
+This directory contains an importable n8n workflow that turns a completed Vidyut simulation into a real, auditable operator email.
 
-## Configure n8n
+The evaluator is the legitimate recipient: they are acting as the distribution-system operator. Simulated residents are never contacted. A resident-facing tariff message is included only as a clearly labelled preview.
 
-1. Import `vidyut-operator-digest.json` into n8n.
+## What the workflow proves
+
+- a backend decision can leave the application as an operational digest;
+- the PDF audit artifact is attached rather than merely linked;
+- delivery state returns to Vidyut and becomes visible in the UI;
+- transient recipient data does not become simulation master data; and
+- automation failure does not affect the simulation core.
+
+## Flow
+
+```mermaid
+flowchart LR
+    UI["Operator enters email + consent"] --> API["Vidyut API"]
+    API -->|"authenticated webhook + idempotency key"| Hook["n8n webhook"]
+    Hook --> PDF["Download audit PDF"]
+    PDF --> Gmail["Send simulated operator digest"]
+    Gmail -->|"authenticated callback"| Delivered["Vidyut delivery state"]
+    PDF -->|"error path"| Failed["Vidyut failure state"]
+```
+
+The webhook responds immediately. Gmail delivery continues asynchronously, avoiding duplicate backend retries while the email provider is working.
+
+## Import and configure
+
+1. Import [`vidyut-operator-digest.json`](vidyut-operator-digest.json) into n8n.
 2. Create a **Header Auth** credential named `Vidyut webhook token`:
    - Header: `X-Vidyut-Webhook-Token`
-   - Value: the same random value used for `N8N_WEBHOOK_TOKEN` in the API.
-3. Create a second **Header Auth** credential named `Vidyut callback token`:
+   - Value: the same long random value used for `N8N_WEBHOOK_TOKEN` in the API.
+3. Create another **Header Auth** credential named `Vidyut callback token`:
    - Header: `X-Vidyut-Callback-Token`
-   - Value: the same random value used for `N8N_CALLBACK_TOKEN` in the API.
-4. Select those credentials on the webhook and both callback nodes. Select the Gmail OAuth credential on **Send operator digest**.
-5. Check workflow settings and keep successful, failed, and manual execution data saving disabled. This prevents the transient recipient address from being retained in n8n execution history.
-6. Activate the workflow and copy its production webhook URL.
+   - Value: the separate value used for `N8N_CALLBACK_TOKEN` in the API.
+4. Select the webhook credential on **Receive Vidyut digest**.
+5. Select the callback credential on **Confirm delivery to Vidyut** and **Report failure to Vidyut**.
+6. Create or select a Gmail OAuth credential on **Send operator digest**.
+7. In workflow settings, disable saving successful, failed, and manual execution data. This prevents n8n history from retaining the one-time recipient address.
+8. Save, activate the workflow, and copy its **production** webhook URL.
 
-The webhook replies immediately, so Vidyut does not retry while Gmail is still sending. n8n then downloads the run PDF, attaches it, sends the HTML digest, and calls the authenticated Vidyut delivery endpoint. The UI polls that state and changes from **accepted** to **delivered**.
+Credentials are intentionally absent from the exported JSON. If an imported node is marked incomplete, reselect the appropriate named credential.
 
 ## Configure Vidyut
 
-Copy `.env.example` to `.env` and set:
+Copy the repository [`.env.example`](../../.env.example) to `.env` and set:
 
 ```dotenv
 N8N_WEBHOOK_URL=https://YOUR_N8N_HOST/webhook/vidyut-operator-digest
@@ -30,11 +56,11 @@ VIDYUT_N8N_API_URL=http://host.docker.internal:8000
 DATABASE_URL=postgresql+psycopg://vidyut:vidyut@localhost:5433/vidyut
 ```
 
-`VIDYUT_PUBLIC_API_URL` is written into the operator email and must be reachable from the operator's browser. `VIDYUT_N8N_API_URL` is used only for PDF download and delivery callbacks from n8n. When n8n runs in Docker, `host.docker.internal` is usually appropriate for that internal URL.
+- `VIDYUT_PUBLIC_API_URL` is written into the email and must open in the recipient's browser.
+- `VIDYUT_N8N_API_URL` is used by n8n for PDF download and delivery callbacks.
+- When n8n runs in Docker but FastAPI runs on the host, `host.docker.internal` is normally the correct internal hostname.
 
-Put backend values in the repository-root `.env` (or `backend/.env`) and restart the API. Local development also reads `frontend/.env` as a compatibility fallback, but keeping n8n secrets beside frontend configuration is discouraged.
-
-When the Vidyut API also runs through Docker Compose, use the Docker-specific overrides below. The included defaults already match a local n8n container and the supplied workflow path:
+When the Vidyut API also runs through Docker Compose, the included defaults use:
 
 ```dotenv
 N8N_DOCKER_WEBHOOK_URL=http://host.docker.internal:5678/webhook/vidyut-operator-digest
@@ -42,6 +68,30 @@ VIDYUT_N8N_API_URL=http://host.docker.internal:8000
 VIDYUT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-The API rate-limits each hashed email to 3 sends/hour and each client IP to 10 sends/hour. It never writes the email address to the run record or database.
+Restart the API after changing environment variables. The repository-root `.env` is canonical; `backend/.env` and `frontend/.env` are compatibility fallbacks for local development.
 
-The workflow uses n8n's documented Gmail attachment field and generic Header Auth support. If an imported node is marked incomplete, reselect its named credential; credentials are intentionally not exported with the workflow.
+## Security and privacy
+
+- Independent shared-secret headers protect the inbound webhook and delivery callback directions.
+- Backend requests carry a stable `Idempotency-Key` derived from run ID and a truncated hash of the recipient address.
+- Transient HTTP and network failures receive up to three attempts with exponential backoff.
+- Client errors are not retried.
+- Dispatch is limited to **3 sends per email hash per hour** and **10 sends per client IP per hour**.
+- The raw email address is not written to the run record or Vidyut database.
+- The subject and body explicitly say **simulated**.
+- The workflow never contacts a simulated resident.
+
+## Test end to end
+
+1. Ensure the workflow is active; do not use “Listen for test event” with the production URL.
+2. Run a fresh scenario in Simulation Lab.
+3. Enter an operator email and accept the one-time-use consent statement.
+4. Select **Send simulated operator digest**.
+5. Confirm the UI changes to `accepted`.
+6. Confirm the Gmail message arrives with the PDF attachment.
+7. Open the report link and verify it uses the public API domain.
+8. Confirm the UI changes to `delivered` after the callback.
+
+If the frontend reports `403`, check that the n8n Header Auth value exactly matches `N8N_WEBHOOK_TOKEN`. If it reports `connection refused`, check container-versus-host URLs. If Gmail OAuth opens a blank window, verify the exact n8n origin and `/rest/oauth2-credential/callback` URI in the Google Cloud OAuth client.
+
+Production setup is covered in the [Vercel + Azure deployment runbook](../../docs/deployment-vercel-azure.md).

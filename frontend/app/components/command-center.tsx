@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { Recording, ScenarioName } from "../types";
 import { actionGlyph, actionLabel, formatNumber, groupEvents } from "../lib/replay";
+import { readPreferences } from "../lib/preferences";
 import { AiExplainer } from "./ai-explainer";
 
 const Network3D = dynamic(
@@ -47,7 +48,7 @@ export function CommandCenter({ recording, scenario, online, source, onOpenRepla
         return current;
       }
       return current + 1;
-    }), 650);
+    }), readPreferences().replayMs);
     return () => window.clearInterval(timer);
   }, [playing, recording.ticks.length]);
 

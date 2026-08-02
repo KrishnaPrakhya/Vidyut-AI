@@ -9,7 +9,7 @@ Vercel and the Azure VM can only see committed code. From the repository root on
 ```bash
 git add .gitattributes .gitignore deploy/azure docs/deployment-vercel-azure.md frontend/env.production.example frontend/vercel.json
 git commit -m "add Azure and Vercel deployment configuration"
-git push origin test-backend
+git push origin main
 ```
 
 Do not add `deploy/azure/env.production`, `frontend/env.production`, the root `.env`, or n8n credential exports. Those contain production secrets and are ignored intentionally.
@@ -91,7 +91,7 @@ ssh -i /path/to/azure-key.pem azureuser@AZURE_VM_IP
 Clone the deployed branch and install Docker:
 
 ```bash
-git clone --branch test-backend https://github.com/KrishnaPrakhya/Vidyut-AI.git
+git clone --branch main https://github.com/KrishnaPrakhya/Vidyut-AI.git
 cd Vidyut-AI
 sudo bash deploy/azure/bootstrap.sh
 ```
@@ -195,7 +195,7 @@ Enable the Gmail API and add the sender Gmail account as a test user while the O
 1. In Vercel select **Add New → Project** and import `KrishnaPrakhya/Vidyut-AI`.
 2. Set **Root Directory** to `frontend`.
 3. Keep framework preset **Next.js**.
-4. Set the production branch to `test-backend` until the deployment changes are merged to `main`.
+4. Set the production branch to `main`.
 5. Add these environment variables for Production:
 
 ```dotenv
@@ -241,7 +241,7 @@ On the Azure VM:
 
 ```bash
 cd ~/Vidyut-AI
-git pull --ff-only origin test-backend
+git pull --ff-only origin main
 bash deploy/azure/deploy.sh
 ```
 

@@ -55,7 +55,7 @@ export function AppHeader({ view, onView, scenario, onScenario, online, onExit }
         <datalist id="command-destinations">{items.map(([, , label]) => <option value={label} key={label} />)}</datalist>
       </form>
       <label className="console-scenario"><span>Scenario</span><select value={scenario} onChange={(event) => onScenario(event.target.value as ScenarioName)}><option value="normal">Normal day</option><option value="heatwave">Heatwave</option><option value="ev_surge">EV surge</option></select></label>
-      <Link className="operator-badge" href="/profile" aria-label="Open operator profile"><span>OP</span><p><strong>Operator</strong><small>Audit mode</small></p></Link>
+      <Link className="operator-badge" href="/profile" aria-label="Open session and environment"><span>◉</span><p><strong>Session</strong><small>{online ? "Core connected" : "Recorded replay"}</small></p></Link>
     </header>
 
     <nav className="mobile-console-nav" aria-label="Mobile command sections">{items.map(([id, glyph, label]) => <button type="button" key={id} className={view === id ? "active" : ""} onClick={() => onView(id)}><i>{glyph}</i><span>{label.split(" ")[0]}</span></button>)}</nav>

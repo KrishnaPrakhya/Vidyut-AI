@@ -46,8 +46,8 @@ artifact behind the incident-report PDF.
 ### 3. Measurement and verification needs history by construction
 
 The standard DR baseline is **high 4-of-5 same-day-adjusted** — it requires the household's load on
-the five preceding comparable days. NILM's M&V role cannot be computed at all without stored
-per-household history. This is a hard dependency, not a nicety.
+the five preceding comparable days. Post-event M&V cannot be computed at all without stored
+history. This is a hard dependency, not a nicety.
 
 ### 4. Forecast accuracy over time
 
@@ -85,8 +85,8 @@ This is the part that matters most.
 services/sim  MUST NOT import  services/persistence
 ```
 
-Same discipline as `services/nilm` not importing `services/actuation`, enforced the same way — a
-test. The simulation stays pure, importable, and headless. `python -m services.sim.run` continues to
+The same discipline prevents `services/observability` from importing `services/actuation`, and both
+boundaries are enforced by tests. The simulation stays pure, importable, and headless. `python -m services.sim.run` continues to
 work with no database, no container, and no network. The Day-2 fallback demo and the offline
 requirement are both protected.
 
