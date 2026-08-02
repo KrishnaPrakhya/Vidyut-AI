@@ -162,8 +162,8 @@ export function LandingPage({ recording, online, onEnter, onWatch }: LandingPage
         <h1>Stop the blackout<br /><em>before</em> your street<br />goes dark.</h1>
         <p>On the hottest evening of the year, electricity use can surge until an entire street loses power. Vidyut spots the danger early, makes small temporary adjustments, and keeps homes and critical medical loads powered.</p>
         <div className="hero-actions">
-          <button className="hero-primary" type="button" onClick={onWatch}>See Vidyut stop the blackout <span>▶</span></button>
-          <button className="hero-secondary" type="button" onClick={onEnter}>Try the interactive demo <span>→</span></button>
+          <button className="hero-primary" type="button" onClick={onEnter}>See Vidyut stop the blackout <span>→</span></button>
+          <button className="hero-secondary" type="button" onClick={onWatch}>Watch the recorded replay <span>▶</span></button>
         </div>
         <div className="hero-proof"><span><b>{savedHomes || 70}</b> homes stay powered</span><span><b>{formatNumber(totals?.vidyut.critical_uptime_pct ?? 100, 2)}%</b> critical-load uptime</span><span><b>1 hour</b> control horizon</span></div>
       </motion.div>
