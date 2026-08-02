@@ -1,641 +1,352 @@
-# ⚡ Vidyut-AI
-
-> **AI-powered distribution network intelligence that prevents neighborhood blackouts before they happen.**
-
-Vidyut-AI is a full-stack platform that simulates realistic Indian electrical distribution networks under stress scenarios (heatwaves, EV surges), applies a tiered autonomous response controller, and lets grid operators explore, compare, and audit every decision through an interactive 3D digital twin, an evidence-grounded AI Copilot, and automated operator email digests — all backed by a production-grade deployment pipeline on **Azure + Vercel**.
-
----
-
-## 📑 Table of Contents
-
-- [Problem Statement](#-problem-statement)
-- [How Vidyut Solves It](#-how-vidyut-solves-it)
-- [System Architecture](#-system-architecture)
-- [Tech Stack](#-tech-stack)
-- [Frontend — Features & Components](#-frontend--features--components)
-- [Backend — Services & Modules](#-backend--services--modules)
-- [API Reference](#-api-reference)
-- [ML / Forecast Pipeline](#-ml--forecast-pipeline)
-- [N8N Workflow Automation](#-n8n-workflow-automation)
-- [Deployment](#-deployment)
-- [Getting Started (Local)](#-getting-started-local)
-- [All Commands](#-all-commands)
-- [Testing](#-testing)
-- [Environment Variables](#-environment-variables)
-- [Project Structure](#-project-structure)
-
----
-
-## 🔥 Problem Statement
-
-During extreme heat events, residential cooling demand can surge simultaneously across hundreds of homes served by the same distribution transformer. When the transformer exceeds its rated capacity, conventional protection trips the entire locality — **70+ homes go dark at once**, including critical medical loads. There is no visibility, no warning, and no fairness in who gets affected.
-
-## 💡 How Vidyut Solves It
-
-Vidyut operates a **5-step autonomous control loop** running every 15 minutes:
-
-| Step | Action | Detail |
-|:--:|:--|:--|
-| **01** | **Sense** | Read demand and equipment state from AMI-enabled households every 15-minute interval |
-| **02** | **Forecast** | Look 1 hour ahead at **each transformer**, not just the whole feeder |
-| **03** | **Decide** | Use the smallest fair intervention that can remove the risk (fairness ledger, debt-weighted priority) |
-| **04** | **Respond** | Shift flexible demand first, then curtail locally only when necessary |
-| **05** | **Verify** | Measure the actual result and carry the household burden ledger forward |
-
-The result: in a recorded heatwave scenario, Vidyut prevents **96%+ of homes-dark-minutes** compared to conventional protection, while maintaining **100% critical-load uptime**.
-
----
-
-## 🏗️ System Architecture
-
-```
-┌──────────────────────────────────────────────────────┐
-│                   FRONTEND (Vercel)                  │
-│  Next.js 16 · React 19 · Three.js · Framer Motion   │
-│  ┌──────────┬──────────┬──────────┬────────────────┐ │
-│  │ Landing  │ Command  │  Replay  │  Simulation    │ │
-│  │  Page    │  Center  │ Dashboard│    Lab         │ │
-│  ├──────────┴──────────┴──────────┴────────────────┤ │
-│  │ Assurance Lab │ Story Mode │ AI Copilot (Groq)  │ │
-│  └─────────────────────┬──────────────────────────── │
-│                        │ /api/ai/explain (LangGraph) │
-└────────────────────────┼─────────────────────────────┘
-                         │ REST + WebSocket
-┌────────────────────────┼─────────────────────────────┐
-│                   BACKEND (Azure VM)                 │
-│  FastAPI · Pandapower · SQLAlchemy · Alembic         │
-│  ┌─────────┬───────────┬────────────┬──────────────┐ │
-│  │   API   │Simulation │ Dispatch   │Observability │ │
-│  │ Service │  Engine   │ (n8n/email)│  & M&V       │ │
-│  ├─────────┴───────────┴────────────┴──────────────┤ │
-│  │ Persistence (PostgreSQL) │ Forecast │ Actuation  │ │
-│  └─────────────────────────┴──────────┴────────────┤ │
-│                                                      │
-│  ┌─────────┐  ┌─────────┐  ┌──────────────────────┐ │
-│  │PostgreSQL│  │  n8n    │  │  Caddy (TLS/Proxy)   │ │
-│  │  16      │  │  2.28   │  │  Auto HTTPS          │ │
-│  └─────────┘  └─────────┘  └──────────────────────┘ │
-└──────────────────────────────────────────────────────┘
-```
-
----
-
-## 🛠️ Tech Stack
-
-### Frontend
-
-| Technology | Purpose |
-|:--|:--|
-| **Next.js 16** | React framework with server-side rendering and API routes |
-| **React 19** | UI library |
-| **Tailwind CSS v4** | Utility-first styling |
-| **Framer Motion** | Animations, page transitions, scroll-driven effects |
-| **Three.js** (`@react-three/fiber` + `@react-three/drei`) | Interactive 3D digital twin of the distribution network |
-| **Recharts** | Data visualization — loading curves, demand charts |
-| **Zustand** | Client-side state management |
-| **LangChain / LangGraph** | Multi-agent AI Copilot orchestration |
-| **Groq SDK** | LLM inference (via server-side route handler) |
-| **Zod v4** | Runtime schema validation for Copilot requests |
-
-### Backend
-
-| Technology | Purpose |
-|:--|:--|
-| **Python 3.11** | Runtime |
-| **FastAPI** | REST API + WebSocket endpoints |
-| **Pandapower** | IEEE-standard power flow solver for grid simulation |
-| **SQLAlchemy 2.0** + **Alembic** | ORM and database migrations |
-| **PostgreSQL 16** | Persistent storage (runs, households, fairness, notifications) |
-| **NumPy / Pandas / SciPy** | Numerical simulation, demand modeling |
-| **NetworkX** | Network topology graph |
-| **ReportLab** | Automated PDF audit report generation |
-| **WebSockets** | Real-time tick-by-tick simulation streaming |
-| **uv** | Fast Python package manager |
-
-### Infrastructure & Automation
-
-| Technology | Purpose |
-|:--|:--|
-| **Docker** + **Docker Compose** | Container orchestration (local + production) |
-| **Caddy** | Automatic HTTPS reverse proxy (TLS via Let's Encrypt) |
-| **n8n** | Workflow automation — operator email digests via Gmail |
-| **Azure VM** (Standard_B2s) | Production backend hosting |
-| **Vercel** | Production frontend hosting |
-| **Cloudflare DNS** | DNS management |
-
----
-
-## 🖥️ Frontend — Features & Components
-
-### 1. Landing Page (`landing-page.tsx`)
-- **Scroll-driven narrative** that tells the blackout story in 3 beats: demand surge → blackout → Vidyut protection
-- **Interactive 3D hero twin** that cycles through scenarios automatically
-- **Animated neighborhood comparison** showing baseline vs. Vidyut side-by-side with house-by-house visualization
-- Parallax scroll progress indicator, responsive navigation
-
-### 2. Command Center (`command-center.tsx`)
-- **Unified operator dashboard** showing real-time network state
-- **Interactive 3D digital twin** with selectable distribution transformers (color-coded by loading: green/yellow/red)
-- **Network loading curve chart** (Recharts `AreaChart`) comparing baseline vs. Vidyut across all 96 intervals
-- **Controller decision feed** showing Tier 1/2/3 events with kW reductions, affected households, and reason codes
-- **Vidyut Copilot AI panel** — ask natural language questions about the grid state
-
-### 3. Replay Dashboard (`replay-dashboard.tsx`)
-- **Full 96-interval playback** with play/pause, speed control (1×–8×), and timeline scrubbing
-- **Event markers** on the timeline showing overloads, controller actions, and outages
-- **Side-by-side transformer comparison** (Baseline vs. Vidyut) with loading %, homes dark, energized status
-- **Fairness leaderboard** — queries the backend for household burden distribution (cumulative debt in minutes)
-- **Dual network view** — toggle between grid overview and 3D spatial twin
-
-### 4. Story Mode (`story-mode.tsx`)
-- **Cinematic auto-playing narrative** using pre-built story beats extracted from the recording
-- Each beat highlights a specific transformer at a specific tick with custom text (heat build-up, overload, forecast action, protection, outcome)
-- Transformer grid visualization with active intervention markers
-
-### 5. Simulation Lab (`simulation-lab.tsx`)
-- **Create and run fresh simulations** against the live backend API
-- Configurable scenario parameters: AMI penetration, connected device penetration, EV penetration, critical share, peak multiplier
-- **Real-time WebSocket streaming** — watch the simulation tick-by-tick as it computes
-- **Results panels**: summary comparison, flexibility registration, events list, operator notifications
-- **Operator digest dispatch** — enter an email (with consent checkbox) to send a real Gmail digest via n8n
-- **PDF audit report** download
-- **Fault injection** — inject heatwave surges, EV surges, cloud cover, or DT faults mid-run
-
-### 6. Assurance Lab (`assurance-lab.tsx`)
-- **Weather-driven opportunity estimation** — enter aggregate demand + ambient temperature to estimate flexible capacity
-- **Measurement & Verification (M&V)** using industry-standard methods: `high_4_of_5` and `ten_in_ten`
-- **ML forecast model registry** — shows Chronos fine-tuned vs. Seasonal Naive vs. LightGBM accuracy (MASE, MAPE, MAE) across horizons
-- Cold-start evaluation for new meters with limited history
-
-### 7. 3D Network Digital Twin (`network-3d.tsx`)
-- Built with **Three.js** (`@react-three/fiber`)
-- 60 distribution transformers across 3 feeders, rendered as 3D blocks with neighborhood houses
-- **Color-coded** by state: green (stable), yellow (strained ≥90%), red (overloaded ≥100%), dark (offline)
-- Active intervention ring animation on transformers under Vidyut control
-- Interactive orbit controls, hover tooltips, click-to-select
-
-### 8. AI Copilot (`ai-explainer.tsx` + `vidyut-agent.ts`)
-- **LangGraph multi-agent workflow** running server-side via Next.js route handler (`/api/ai/explain`)
-- **5 specialist agents**: Risk, Compare, Resident, Incident, General
-- Evidence grounding: every answer cites specific data points from the simulation frame
-- **Claim verification**: unsupported numeric claims are automatically detected and repaired
-- **Safety guardrails**: the Copilot never implies actuation authority, never uses Markdown, always identifies readings as simulated
-- Full audit trace returned to the UI showing each graph node traversed
-
----
-
-## ⚙️ Backend — Services & Modules
-
-### `services/sim/` — Simulation Engine
-| Module | Responsibility |
-|:--|:--|
-| `world.py` | Core world model — households, transformers, pandapower network, power flow solver |
-| `run.py` | Orchestrates a full simulation run (baseline + vidyut arms, 96 ticks each) |
-| `demand.py` | Demand modeling with temperature-driven peaks, EV profiles, design-day sizing |
-| `network.py` | Builds the pandapower network (feeders, transformers, buses, lines) |
-| `population.py` | Generates the household population with AMI, devices, tiers |
-| `controllers/baseline.py` | Conventional protection: overload → disconnect transformer |
-| `controllers/vidyut.py` | **580-line Vidyut controller**: Tier 1 (demand shifting + topology reconfiguration), Tier 2 (preemptive curtailment via price signals + device control), Tier 3 (emergency load limiting + last-resort disconnection) |
-| `ledger.py` | Fairness ledger — tracks cumulative burden (minutes of curtailment) per household |
-| `metrics.py` | Collects per-tick and per-run metrics (loading, homes dark, unserved kWh, Gini coefficient) |
-| `reconfiguration.py` | Tie-switch reconfiguration to rebalance feeder loading |
-| `injection.py` | Runtime fault injection (heatwave, EV surge, cloud cover, DT fault) |
-| `record.py` | Records deterministic simulation runs to JSON for the Replay engine |
-| `scenario.py` | Loads YAML scenario configs (`heatwave`, `ev_surge`, `normal`) |
-| `topology.py` | Network topology generation with tie switches |
-
-### `services/api/` — REST API
-| Module | Responsibility |
-|:--|:--|
-| `main.py` | FastAPI application — 25+ endpoints, CORS, WebSocket, lifespan management |
-| `schemas.py` | Pydantic request/response models with validation |
-| `store.py` | In-memory run store with background simulation execution |
-| `report.py` | PDF audit report generation using ReportLab (A4 format, tables, event logs) |
-| `models_registry.py` | Serves ML model evaluation artifacts |
-
-### `services/dispatch/` — Notification & Email Automation
-| Module | Responsibility |
-|:--|:--|
-| `digest.py` | Builds the operator digest payload (HTML email body, subject, PDF link) |
-| `n8n.py` | Dispatches operator digests to n8n webhook with retry + HMAC auth |
-| `outbox.py` | Notification outbox model (pending/acknowledged state) |
-| `rate_limit.py` | Per-IP and per-email rate limiting (3/email/hour, 10/IP/hour) |
-
-### `services/observability/` — Flexibility Assurance & M&V
-| Module | Responsibility |
-|:--|:--|
-| `flexibility.py` | Weather-driven opportunity estimation, registered capacity envelope, availability profiling |
-| `verification.py` | Post-event M&V using `high_4_of_5` and `ten_in_ten` baseline methods |
-
-### `services/persistence/` — Database Layer
-| Module | Responsibility |
-|:--|:--|
-| `models.py` | SQLAlchemy ORM models: Feeder, DistributionTransformer, Household, Device, Run, Notification, HouseholdAction, TickMetric |
-| `repository.py` | CRUD operations for runs, notifications, delivery tracking |
-| `queries.py` | Fairness leaderboard, household history, profile lookups |
-| `engine.py` | Database connection management, schema creation |
-
-### `services/forecast/` — Demand Forecasting
-| Module | Responsibility |
-|:--|:--|
-| `naive.py` | Seasonal naive baseline forecaster |
-| `base.py` | Forecaster interface |
-
-### `services/actuation/` — Load Control
-| Module | Responsibility |
-|:--|:--|
-| `commands.py` | Actuation command model — tracks device curtailment, load limiting, and disconnect commands with durations |
-
----
-
-## 🌐 API Reference
-
-### Health & Metadata
-
-| Method | Endpoint | Description |
-|:--|:--|:--|
-| `GET` | `/api/health` | Health check — returns API status, available scenarios, database connectivity, n8n configuration |
-| `GET` | `/api/scenarios` | List available simulation scenarios (`normal`, `heatwave`, `ev_surge`) |
-| `GET` | `/api/models` | ML model registry — forecast evaluation metrics (MASE, MAPE, cold-start) |
-
-### Recordings (Pre-computed Replays)
-
-| Method | Endpoint | Description |
-|:--|:--|:--|
-| `GET` | `/api/recordings` | List all recorded simulation files with metadata |
-| `GET` | `/api/recordings/{scenario}?seed=42` | Download a specific recorded replay JSON (cached 5 min) |
-
-### Simulation Runs
-
-| Method | Endpoint | Description |
-|:--|:--|:--|
-| `POST` | `/api/runs` | Create a new simulation run (scenario, seed, ticks, params, carry_debt) |
-| `GET` | `/api/runs` | List all runs |
-| `GET` | `/api/runs/{run_id}` | Get run status (pending/running/ready/failed) |
-| `GET` | `/api/runs/{run_id}/summary` | Get completed run summary — baseline vs. vidyut totals + deltas |
-| `GET` | `/api/runs/{run_id}/flexibility` | Registered, available, and realised flexibility data |
-| `GET` | `/api/runs/{run_id}/events?arm=vidyut&tier=1` | Paginated controller events with filtering |
-| `GET` | `/api/runs/{run_id}/report` | Download PDF audit report |
-| `POST` | `/api/runs/{run_id}/inject` | Inject a fault/surge into a completed run and re-simulate |
-| `WebSocket` | `/ws/runs/{run_id}?speed=4` | Real-time tick-by-tick simulation stream |
-
-### Notifications & Operator Digests
-
-| Method | Endpoint | Description |
-|:--|:--|:--|
-| `GET` | `/api/runs/{run_id}/notifications` | Get pending notifications for a run |
-| `POST` | `/api/runs/{run_id}/notifications/dispatch` | Send operator digest email via n8n (rate-limited, requires consent) |
-| `GET` | `/api/runs/{run_id}/notifications/delivery` | Poll delivery status (accepted → delivered) |
-| `POST` | `/api/runs/{run_id}/notifications/delivery` | n8n callback — update delivery status (HMAC authenticated) |
-| `POST` | `/api/notifications/{id}/delivery` | Per-notification delivery callback |
-
-### Observability & M&V
-
-| Method | Endpoint | Description |
-|:--|:--|:--|
-| `GET` | `/api/observability/status` | Flexibility assurance engine status and supported methods |
-| `POST` | `/api/observability/flexibility/estimate` | Estimate weather-driven flexibility opportunity from AMI + temperature data |
-| `POST` | `/api/observability/events/verify` | Post-event M&V verification using `high_4_of_5` or `ten_in_ten` |
-
-### Households & Fairness
-
-| Method | Endpoint | Description |
-|:--|:--|:--|
-| `GET` | `/api/households/{household_id}` | Household profile + action history |
-| `GET` | `/api/fairness/leaderboard?dt_id=F1-DT17` | Fairness leaderboard — cumulative burden ranking |
-
-### Frontend Server Route
-
-| Method | Endpoint | Description |
-|:--|:--|:--|
-| `POST` | `/api/ai/explain` | Vidyut Copilot — LangGraph multi-agent AI pipeline (runs on Next.js server, calls Groq) |
-
----
-
-## 🧠 ML / Forecast Pipeline
-
-Located in `backend/ml/`:
-
-| Item | Description |
-|:--|:--|
-| `kaggle_training/train_forecast.py` | Training script for demand forecasting models using real Kaggle smart meter data |
-| `kaggle_training/train_forecast.ipynb` | Jupyter notebook version for interactive development |
-| `models/forecast_eval.json` | Pre-computed model evaluation results (Chronos fine-tuned, LightGBM, Seasonal Naive) |
-| `models/forecasts.parquet` | Forecast output data |
-| `export_forecast_data.py` | Export simulation demand data for training |
-
-**Models evaluated**:
-- **Chronos (fine-tuned)** — Amazon's foundation model for time series, fine-tuned on Indian household data
-- **LightGBM** — gradient boosted tree baseline
-- **Seasonal Naive** — persistence baseline
-
-Metrics tracked: **MASE**, **MAPE**, **MAE (kW)** across next-hour and full-day horizons, including cold-start performance with limited history.
-
----
-
-## 🔄 N8N Workflow Automation
-
-Located in `automation/n8n/`:
-
-The **Vidyut Operator Digest** workflow sends a real email (via Gmail OAuth) to the evaluator acting as the grid operator. The flow:
-
-1. **Receive webhook** — authenticated with `X-Vidyut-Webhook-Token`
-2. **Download audit PDF** — fetches the run's PDF report from the API
-3. **Send Gmail** — HTML digest email with the PDF attached
-4. **Delivery callback** — calls back to the API with delivery status (authenticated with `X-Vidyut-Callback-Token`)
-
-Security:
-- Two independent HMAC tokens (webhook + callback)
-- Rate limited: 3 sends/email/hour, 10 sends/IP/hour
-- Email address is never persisted to the database or run record
-- n8n execution data saving is disabled to prevent retention
-
----
-
-## 🚀 Deployment
-
-### Frontend → Vercel
-
-The Next.js frontend is deployed to **Vercel** with the configuration in `frontend/vercel.json`:
-
-```bash
-# Vercel auto-detects Next.js, uses:
-npm ci          # install
-npm run build   # build
+# Vidyut
+
+> Forecast stress early. Coordinate the smallest fair response. Keep critical services powered.
+
+Vidyut is an auditable distribution-network intelligence platform for overloaded urban localities. It runs the same demand through two deterministic worlds—conventional transformer protection and the Vidyut controller—then lets an operator replay, inspect, question, and export every outcome.
+
+It combines a pandapower digital twin, a tiered demand-response controller, a persistent household fairness ledger, a fine-tuned Chronos-Bolt forecasting study on real Indian smart-meter data, an evidence-grounded LangGraph copilot, post-event measurement and verification, and an n8n operator-notification workflow.
+
+**Vidyut is a simulation and decision-support prototype. It is not connected to live utility equipment and cannot issue field commands.**
+
+![Vidyut 3D distribution-network command center](frontend/public/vidyut-grid-preview.png)
+
+## The 30-second evaluator summary
+
+| Question | Vidyut's answer |
+| --- | --- |
+| What fails today? | When a distribution transformer overloads, conventional protection can disconnect an entire locality—including critical loads. |
+| What does Vidyut change? | It forecasts local stress, shifts deferrable demand, reconfigures topology, controls enrolled devices, applies meter limits, and disconnects only as a last resort. |
+| How is the comparison fair? | Baseline and Vidyut receive the same generated population, demand, weather, topology, parameters, and random seed. Only the control strategy changes. |
+| Where is the ML? | Chronos-Bolt-small was fine-tuned for day-ahead forecasting and evaluated on held-out real CEEW smart-meter data from Mathura and Bareilly. |
+| Is the ML result real? | Yes. The training code, fitted predictor archive, forecasts, and detailed evaluation JSON are shipped in `backend/ml/`. |
+| Is Chronos driving the live simulation? | No. The real-time loop currently uses the lightweight `damped_trend` forecaster; `/api/models` reports Chronos as trained but evaluation-only. |
+| What makes it auditable? | Every run retains inputs, per-tick states, controller events, reason codes, household burden, notifications, delivery state, and a generated PDF report. |
+
+## Measured results
+
+### 1. End-to-end heatwave response
+
+The repository includes a deterministic 24-hour, 96-interval heatwave replay across **60 distribution transformers and 4,200 simulated homes**. These figures are read directly from [`backend/data/recorded/heatwave-42.json`](backend/data/recorded/heatwave-42.json):
+
+| Outcome | Conventional protection | Vidyut | Change |
+| --- | ---: | ---: | ---: |
+| Peak homes dark | 980 | **49** | **95.0% fewer** |
+| Homes-dark minutes | 107,100 | **3,780** | **96.5% lower** |
+| Unserved energy | 4,086.84 kWh | **1.40 kWh** | **99.97% lower** |
+| Critical-load uptime | 97.85% | **100.00%** | **+2.15 points** |
+| Maximum household burden | 540 min | **300 min** | **240 min lower** |
+| Non-converged power-flow ticks | 0 | **0** | Stable in both arms |
+
+The recorded stress case is intentionally severe: maximum loading remains above the equipment limit even after Vidyut exhausts available flexibility. The result demonstrates graceful degradation—not a claim that software can create capacity that does not exist.
+
+### 2. Fine-tuned Chronos-Bolt forecasting
+
+Vidyut fine-tunes **Chronos-Bolt-small** for a 96-step day-ahead horizon at 15-minute resolution. The training pipeline uses real CEEW high-frequency smart-meter measurements from **Mathura and Bareilly, Uttar Pradesh**, resampled downward to 15 minutes without synthetic training data.
+
+The held-out evaluation covers **1,285,204 training observations across 192 evaluation series** spanning transformer aggregates, household clusters, and individual homes. Lower MASE is better; a value below `1.0` beats the in-sample seasonal-naive scale.
+
+| Forecast model | Day-ahead MASE | Day-ahead MAPE | Result |
+| --- | ---: | ---: | --- |
+| Seasonal naive | 1.0635 | 60.56% | Operational baseline |
+| Chronos-Bolt zero-shot | 0.8748 | 45.79% | 17.7% better MASE than seasonal naive |
+| **Chronos-Bolt fine-tuned** | **0.8579** | **43.23%** | **19.3% better MASE than seasonal naive** |
+
+Additional evidence:
+
+- **Next-hour MASE:** `0.3779` versus `0.6958` for seasonal naive—a **45.7% improvement**.
+- **14-day cold start:** fine-tuned Chronos `0.8238` versus a from-scratch tabular model `0.9322`—an **11.6% improvement**.
+- **Fine-tuning gain:** `0.8579` versus zero-shot `0.8748`—a further **1.9% improvement**.
+- **Configuration:** 2,000 fine-tuning steps, learning rate `1e-5`, seed `42`, 96-step horizon.
+
+Reproducible evidence:
+
+- [Training script](backend/ml/kaggle_training/train_forecast.py)
+- [Training notebook](backend/ml/kaggle_training/train_forecast.ipynb)
+- [Detailed evaluation](backend/ml/models/forecast_eval.json)
+- [Fine-tuned forecast output](backend/ml/models/forecasts.parquet)
+- `backend/ml/models/forecast_predictor.zip` — fitted AutoGluon/Chronos predictor archive
+
+#### Runtime boundary
+
+| Capability | Status |
+| --- | --- |
+| Chronos training and held-out evaluation | ✅ Complete |
+| Fitted predictor and forecasts shipped | ✅ Complete |
+| Metrics exposed through `GET /api/models` | ✅ Complete |
+| Chronos inference inside every simulation tick | **Not enabled** |
+| Live simulation forecaster | `damped_trend` |
+
+This separation is deliberate and visible in the API. The tick loop stays deterministic and dependency-light, while the model registry presents the real-data forecasting evidence without claiming that a 188 MB AutoGluon predictor is running when it is not.
+
+Read the full ML methodology in [backend/ml/README.md](backend/ml/README.md).
+
+## Why this problem matters
+
+Indian distribution networks are absorbing growing cooling and EV demand while smart-meter coverage and historical telemetry are still developing. A feeder-level average can look safe while one neighborhood transformer is already close to its thermal limit. Conventional protection sees the violation late and responds coarsely: trip the transformer, darken every connected home, and restore it later.
+
+Vidyut changes the control objective from “disconnect enough load” to:
+
+1. predict which transformer will breach its safe limit;
+2. calculate the local shortfall;
+3. use the least disruptive available flexibility;
+4. exclude critical households from controllable actions;
+5. rotate unavoidable burden using persistent fairness debt; and
+6. retain enough evidence to explain and verify the decision.
+
+## How Vidyut responds
+
+The controller evaluates the network every 15 simulated minutes and escalates only as far as required:
+
+| Stage | Response | Purpose |
+| --- | --- | --- |
+| Observe | AMI coverage, transformer loading, weather stress, registered devices | Build a local view of demand and available flexibility |
+| Forecast | Four-interval transformer outlook in the live loop | Detect risk before protection trips |
+| Tier 0 | Time-of-day price signal | Ask non-critical homes without connected control to shift voluntarily |
+| Tier 1 | Defer flexible runs and evaluate tie-switch reconfiguration | Remove stress with minimal customer impact |
+| Tier 2 | Curtail enrolled devices, then apply temporary smart-meter load limits | Clear the forecast shortfall locally |
+| Tier 3 | Debt-weighted rotational disconnection | Last resort after flexibility is exhausted |
+| Verify | Compare baseline, observed demand, delivered reduction, and fairness outcomes | Produce an auditable result |
+
+Critical-tier households are excluded from device curtailment, load limiting, and rotation. The controller has no dependency on n8n, LangGraph, or the frontend; the core simulation remains deterministic and headless.
+
+## System architecture
+
+```mermaid
+flowchart TB
+    User["Operator / evaluator"] --> Web["Next.js operator experience"]
+    Web -->|"REST + WebSocket"| API["FastAPI boundary"]
+    Web --> Copilot["LangGraph evidence copilot"]
+    Copilot --> Groq["Groq LLM"]
+
+    API --> Sim["Deterministic A/B simulation"]
+    Sim --> Twin["pandapower network + demand model"]
+    Sim --> Baseline["Conventional protection"]
+    Sim --> Controller["Vidyut tiered controller"]
+    Controller --> Ledger["Fairness debt ledger"]
+
+    API --> Postgres["PostgreSQL audit history"]
+    API --> Report["ReportLab PDF evidence"]
+    API --> Observe["Flexibility assurance + M&V"]
+    API --> N8N["n8n operator digest"]
+    N8N --> Email["Gmail + delivery callback"]
+
+    Chronos["Fine-tuned Chronos artifacts"] -. "evaluation registry" .-> API
+    Damped["Damped-trend runtime forecast"] --> Controller
 ```
 
-Set these environment variables in Vercel:
-- `NEXT_PUBLIC_API_URL` — points to the Azure API domain
-- `GROQ_API_KEY` — server-side only, enables the AI Copilot
+### Architectural safety boundaries
 
-### Backend → Azure VM
+- `services/sim` does not import `services/persistence`; database failure cannot change simulation logic.
+- The LangGraph copilot receives curated evidence and has **no actuation tool**.
+- The flexibility-assurance engine estimates aggregate opportunity and explicitly **does not identify appliances**.
+- Operator email is accepted only with consent, rate-limited, sent once, and not stored in the Vidyut run record.
+- The baseline and Vidyut arms share the same demand realization, enabling a defensible counterfactual.
 
-Located in `deploy/azure/`. The backend runs on a single **Azure Ubuntu VM** (Standard_B2s, 2 vCPU, 4 GB RAM) with:
+## Product experience
 
-| Service | Port | Access |
-|:--|:--|:--|
-| **Caddy** | 80, 443 | Public (automatic HTTPS) |
-| **FastAPI** | 8000 | Internal only (behind Caddy) |
-| **n8n** | 5678 | Internal only (behind Caddy) |
-| **PostgreSQL** | 5432 | Internal only (no public access) |
+| Surface | What an evaluator can do |
+| --- | --- |
+| Landing story | Understand the heatwave → overload → targeted response narrative without reading a technical report |
+| Command center | Inspect network loading, transformer state, interventions, evidence, and the 3D digital twin |
+| Replay | Play, pause, accelerate, or scrub all 96 intervals while every panel stays synchronized |
+| Simulation Lab | Generate a fresh deterministic baseline-versus-Vidyut run with custom assumptions |
+| Assurance & Models | Inspect the Chronos evaluation, flexibility boundaries, and post-event M&V methods |
+| Vidyut Copilot | Ask risk, comparison, resident-impact, and incident questions grounded in the selected frame |
+| Audit export | Open a structured PDF report containing run identity, outcomes, and controller events |
+| Operator automation | Send a real simulated-run digest to the evaluator acting as the control-room operator |
 
-**Deployment commands:**
+### The Copilot is agentic where it is useful
 
-```bash
-# 1. Bootstrap the VM (install Docker, configure firewall)
-sudo bash deploy/azure/bootstrap.sh
+The server-side LangGraph workflow:
 
-# 2. Configure production env
-cp deploy/azure/env.production.example deploy/azure/env.production
-nano deploy/azure/env.production
+1. validates and grounds the selected simulation context;
+2. classifies the question;
+3. routes it to a risk, comparison, resident, incident, or general specialist;
+4. drafts an answer from an allow-listed evidence set;
+5. verifies numeric claims;
+6. repairs unsupported claims; and
+7. returns the answer with its visible audit path.
 
-# 3. Deploy all services
-bash deploy/azure/deploy.sh
-```
+It explains decisions; it cannot operate equipment.
 
-The `deploy.sh` script validates env vars (rejects placeholders), pulls images, builds the API container, and starts everything with `docker compose up -d`.
+## Privacy-aware flexibility assurance
 
-**DNS Setup** (Cloudflare):
-- `api.yourdomain.com` → Azure VM IP (A record)
-- `ops.yourdomain.com` → Azure VM IP (A record, for n8n)
-- Frontend domain → configured in Vercel
+Vidyut does not pretend that unreliable appliance-level NILM results are operational truth. The observability layer instead distinguishes five quantities:
 
-Full deployment runbook: `docs/deployment-vercel-azure.md`
+- **registered:** controllable device nameplate capacity;
+- **estimated:** temperature-associated flexible opportunity from aggregate AMI and weather history;
+- **actionable:** estimated opportunity capped by the registered envelope;
+- **simulated:** flexibility used by the digital twin; and
+- **verified:** reduction measured after an event using `high_4_of_5` or `ten_in_ten` baselines.
 
----
+This is simpler to audit, works with aggregate measurements, and keeps estimation separate from control authority.
 
-## 🏁 Getting Started (Local)
+## Technology
+
+| Layer | Stack |
+| --- | --- |
+| Frontend | Next.js 16, React 19, TypeScript, Framer Motion, Recharts, Three.js / React Three Fiber |
+| Agentic explanation | LangGraph, LangChain, Groq, Zod evidence validation |
+| API | Python 3.11, FastAPI, Pydantic, WebSockets |
+| Power-system simulation | pandapower, NumPy, SciPy, NetworkX, Pandas |
+| Forecast research | Chronos-Bolt-small, AutoGluon TimeSeries, PyTorch |
+| Persistence | PostgreSQL 16, SQLAlchemy 2, Alembic |
+| Audit and automation | ReportLab, n8n, Gmail OAuth, authenticated delivery callbacks |
+| Deployment | Docker Compose, Azure VM, Caddy TLS, Vercel, Cloudflare DNS |
+
+## Three-minute evaluation path
+
+1. Open the landing page and play **Watch the heatwave response**.
+2. Enter the command center and scrub to the evening peak.
+3. Switch between baseline and Vidyut in the 3D twin.
+4. Open **Simulation Lab**, run the same seed through both arms, and inspect the outcome delta.
+5. Open **Assurance & Models** to review the fine-tuned Chronos evidence and runtime boundary.
+6. Ask the Copilot: “Why is this transformer at risk?” and expand its audit path.
+7. Generate the PDF report or send the one-time simulated operator digest.
+
+The included recorded replays keep steps 1–3 available even if the live API is temporarily unavailable.
+
+## Local quick start
 
 ### Prerequisites
 
-- **Docker** & **Docker Compose** (for database + optional full stack)
-- **Node.js 20+** (for frontend)
-- **Python 3.11** with [uv](https://github.com/astral-sh/uv) (for backend)
+- Docker Desktop with Docker Compose
+- Node.js 20+
+- Python 3.11 and [`uv`](https://docs.astral.sh/uv/) for direct backend development
 
-### Quick Start (Docker — recommended for evaluators)
+### Start the API and database
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/KrishnaPrakhya/Vidyut-AI.git
 cd Vidyut-AI
-
-# 2. Set up environment variables
 cp .env.example .env
-
-# 3. Start the backend + database
 docker compose up --build
+```
 
-# 4. In a new terminal, start the frontend
+The API is available at `http://localhost:8000`; interactive OpenAPI documentation is at `http://localhost:8000/docs`.
+
+### Start the frontend
+
+```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-Open **http://localhost:3000** in your browser.
+Open `http://localhost:3000`.
 
-### Manual Setup (Development)
+`GROQ_API_KEY` is optional and enables the Copilot through the Next.js server route. n8n is also optional for core simulation and replay; configure it only when testing the email workflow.
+
+### Direct backend development
 
 ```bash
-# 1. Start the database
-docker compose up postgres -d
-
-# 2. Set up and start the backend
 cd backend
-uv sync                                              # install dependencies
-uv run uvicorn services.api.main:app --reload --port 8000  # start API
-
-# 3. In a new terminal, start the frontend
-cd frontend
-npm install
-npm run dev
+uv sync
+uv run uvicorn services.api.main:app --reload --port 8000
 ```
 
-### Enable the AI Copilot
-
-Add `GROQ_API_KEY=your_key_here` to `frontend/.env`. The key is used server-side only (never exposed to the browser via `NEXT_PUBLIC_`).
-
----
-
-## 📋 All Commands
-
-### Makefile (from project root)
-
-| Command | What it does |
-|:--|:--|
-| `make setup` | Install Python dependencies via `uv sync` |
-| `make api` | Start the FastAPI backend with hot-reload on port 8000 |
-| `make demo` | Build and start the full Docker Compose stack |
-| `make demo-check` | Run pre-demo readiness checks (API health, DB, n8n, recordings, simulation, PDF report) |
-| `make run SCENARIO=heatwave SEED=42` | Run a specific simulation scenario locally |
-| `make record` | Record all scenarios to JSON files for the Replay engine |
-| `make test` | Run fast unit tests (`pytest -q -m "not slow"`) |
-| `make test-all` | Run the complete test suite including slow property sweeps |
-| `make models` | Print the ML model evaluation registry |
-| `make clean` | Remove `__pycache__` and `.pytest_cache` |
-
-### Frontend (from `frontend/`)
-
-| Command | What it does |
-|:--|:--|
-| `npm run dev` | Start Next.js dev server on port 3000 |
-| `npm run build` | Production build |
-| `npm run start` | Start production server |
-| `npm run lint` | Run ESLint |
-
-### Docker
-
-| Command | What it does |
-|:--|:--|
-| `docker compose up --build` | Start the full local stack (PostgreSQL + API) |
-| `docker compose up postgres -d` | Start just the database |
-| `docker compose down` | Stop all services |
-| `docker compose logs -f api` | Tail API logs |
-
----
-
-## 🧪 Testing
-
-The backend has **12 dedicated test files** covering:
-
-| Test File | Coverage |
-|:--|:--|
-| `test_api.py` | All REST endpoints, WebSocket streaming, error handling |
-| `test_determinism.py` | Verifies identical seeds produce identical simulation results |
-| `test_dispatch.py` | n8n webhook dispatch, rate limiting, HMAC authentication |
-| `test_observability.py` | Weather opportunity estimation, M&V verification methods |
-| `test_opening_debt.py` | Fairness ledger initialization and carry-forward |
-| `test_operator_digest.py` | Operator digest payload construction and delivery |
-| `test_persistence.py` | Database CRUD operations, schema creation |
-| `test_persistence_integration.py` | End-to-end database persistence with full run lifecycle |
-| `test_reconfiguration.py` | Tie-switch topology reconfiguration logic |
-| `test_record.py` | Deterministic recording to JSON |
-| `test_runtime_hardening.py` | Edge cases, malformed input, concurrent access |
-| `test_safety_invariants.py` | Critical safety properties (no actuation leaks, energy balance) |
+## Verification
 
 ```bash
-# Fast tests only
-cd backend && uv run pytest -q -m "not slow"
+# Backend tests
+cd backend
+uv run pytest -q
 
-# Full suite
-cd backend && uv run pytest -q
+# Frontend checks
+cd ../frontend
+npm run lint
+npm run build
 ```
 
----
+The backend test suite covers API behavior, determinism, safety invariants, reconfiguration, persistence, fairness debt, observability, n8n dispatch, delivery callbacks, and recording integrity.
 
-## 🔐 Environment Variables
+Before an evaluation, run the repository-level readiness check:
 
-### Root `.env`
-
-| Variable | Description |
-|:--|:--|
-| `CORS_ORIGINS` | Allowed frontend origins (default: `http://localhost:3000`) |
-| `VIDYUT_PUBLIC_API_URL` | Public-facing API URL (written into emails) |
-| `DATABASE_URL` | PostgreSQL connection string |
-| `N8N_WEBHOOK_URL` | n8n production webhook endpoint |
-| `N8N_WEBHOOK_TOKEN` | HMAC token for authenticating webhook calls to n8n |
-| `N8N_CALLBACK_TOKEN` | HMAC token for authenticating n8n callbacks to the API |
-| `N8N_DOCKER_WEBHOOK_URL` | Container-safe n8n URL (for Docker Compose) |
-| `VIDYUT_N8N_API_URL` | Internal API URL used by n8n for PDF download and callbacks |
-
-### Frontend `.env`
-
-| Variable | Description |
-|:--|:--|
-| `NEXT_PUBLIC_API_URL` | Backend API URL (default: `http://localhost:8000`) |
-| `GROQ_API_KEY` | Server-side Groq API key for the AI Copilot |
-
----
-
-## 📁 Project Structure
-
+```powershell
+backend\.venv\Scripts\python.exe scripts\demo_check.py
 ```
+
+Use `--core-only` during local development without n8n. See [docs/demo-readiness.md](docs/demo-readiness.md).
+
+## Key API routes
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/health` | API, database, scenario, and automation readiness |
+| `POST` | `/api/runs` | Create a deterministic A/B simulation |
+| `GET` | `/api/runs/{id}/summary` | Baseline, Vidyut, and delta metrics |
+| `GET` | `/api/runs/{id}/events` | Filtered, paginated controller evidence |
+| `WS` | `/ws/runs/{id}` | Replay stored ticks at a chosen speed |
+| `GET` | `/api/runs/{id}/report` | Generate the audit PDF |
+| `GET` | `/api/models` | Chronos evaluation and runtime status |
+| `POST` | `/api/observability/flexibility/estimate` | Aggregate weather-associated opportunity |
+| `POST` | `/api/observability/events/verify` | Post-event M&V |
+| `POST` | `/api/runs/{id}/notifications/dispatch` | Consent-gated n8n operator digest |
+| `GET` | `/api/fairness/leaderboard` | Persistent household burden ordering |
+
+The full machine-readable schema is in [docs/api-samples/openapi.json](docs/api-samples/openapi.json), with a plain-language handoff in [frontend/docs/endpoint-guide.md](frontend/docs/endpoint-guide.md).
+
+## Deployment
+
+The production layout uses:
+
+- **Vercel** for the Next.js frontend and server-side Copilot route;
+- **Azure Ubuntu VM** for FastAPI, PostgreSQL, n8n, and Caddy;
+- **Caddy** for automatic HTTPS and reverse proxying; and
+- **Cloudflare** for DNS only.
+
+Only ports `80` and `443` are public. FastAPI, n8n, and PostgreSQL communicate over private Docker networks; SSH should be restricted to the operator's IP.
+
+Follow [docs/deployment-vercel-azure.md](docs/deployment-vercel-azure.md) for the complete portal, DNS, OAuth, rollback, and cost-control procedure.
+
+## Repository map
+
+```text
 Vidyut-AI/
-├── frontend/                      # Next.js 16 frontend
-│   ├── app/
-│   │   ├── components/            # 11 React components
-│   │   │   ├── landing-page.tsx        # Scroll-driven narrative landing
-│   │   │   ├── command-center.tsx      # Operator dashboard + 3D twin
-│   │   │   ├── replay-dashboard.tsx    # 96-interval playback explorer
-│   │   │   ├── simulation-lab.tsx      # Live simulation runner
-│   │   │   ├── assurance-lab.tsx       # M&V and flexibility estimation
-│   │   │   ├── story-mode.tsx          # Cinematic auto-playing narrative
-│   │   │   ├── network-3d.tsx          # Three.js 3D digital twin
-│   │   │   ├── ai-explainer.tsx        # Copilot UI panel
-│   │   │   ├── app-header.tsx          # Navigation header
-│   │   │   ├── transformer-grid.tsx    # Grid overview component
-│   │   │   └── account-console.tsx     # User account management
-│   │   ├── api/ai/explain/route.ts  # Copilot server-side API route
-│   │   ├── lib/
-│   │   │   ├── vidyut-agent.ts         # LangGraph multi-agent AI pipeline
-│   │   │   ├── replay.ts              # Replay data utilities
-│   │   │   └── glossary.tsx           # Technical term glossary
-│   │   ├── page.tsx                 # Main app entry point
-│   │   ├── layout.tsx               # Root layout
-│   │   ├── types.ts                 # TypeScript type definitions
-│   │   └── globals.css              # 120KB+ design system
-│   ├── vercel.json                  # Vercel deployment config
-│   └── package.json
-│
-├── backend/                       # Python 3.11 backend
-│   ├── services/
-│   │   ├── api/                    # FastAPI REST API (25+ endpoints)
-│   │   ├── sim/                    # Simulation engine (pandapower)
-│   │   │   └── controllers/        # Baseline + Vidyut controllers
-│   │   ├── dispatch/               # n8n integration + email automation
-│   │   ├── observability/          # Flexibility estimation + M&V
-│   │   ├── persistence/            # PostgreSQL ORM + queries
-│   │   ├── forecast/               # Demand forecasting
-│   │   └── actuation/              # Load control commands
-│   ├── ml/
-│   │   ├── kaggle_training/        # ML training scripts + notebooks
-│   │   └── models/                 # Pre-computed forecast evaluations
-│   ├── data/
-│   │   ├── scenarios/              # YAML scenario configs
-│   │   └── recorded/               # Pre-recorded simulation replays
-│   ├── tests/                      # 12 test files
-│   ├── migrations/                 # Alembic database migrations
-│   ├── Dockerfile                  # Backend container image
-│   └── pyproject.toml              # Python project config
-│
-├── automation/
-│   └── n8n/                        # n8n workflow + configuration
-│       ├── vidyut-operator-digest.json  # Importable workflow
-│       └── README.md
-│
-├── deploy/
-│   └── azure/                      # Production deployment
-│       ├── bootstrap.sh            # VM setup (Docker, firewall)
-│       ├── deploy.sh               # Deploy all services
-│       ├── docker-compose.prod.yml # Production compose (4 services)
-│       ├── Caddyfile                # Reverse proxy config
-│       └── env.production.example
-│
-├── docs/                          # Documentation
-│   ├── deployment-vercel-azure.md  # Full deployment runbook
-│   ├── frontend-contract.md        # Frontend-backend API contract
-│   ├── persistence-scope.md        # Database schema documentation
-│   └── demo-readiness.md           # Pre-demo checklist
-│
-├── scripts/
-│   └── demo_check.py              # Automated readiness verification
-│
-├── docker-compose.yml             # Local development compose
-├── Makefile                       # Project-wide commands
-└── .env.example                   # Environment variable template
+├── frontend/                       Next.js operator experience and LangGraph copilot
+├── backend/
+│   ├── services/api/               FastAPI, WebSocket, report and model registry
+│   ├── services/sim/               Deterministic network and controller simulation
+│   ├── services/observability/     Flexibility opportunity and post-event M&V
+│   ├── services/persistence/       PostgreSQL audit and fairness history
+│   ├── services/dispatch/          n8n delivery, retries and rate limits
+│   ├── services/forecast/          Lightweight runtime forecaster
+│   ├── ml/kaggle_training/         Chronos training script and notebook
+│   ├── ml/models/                  Predictor, forecasts and evaluation artifacts
+│   ├── data/scenarios/             Heatwave, EV surge and normal-day inputs
+│   ├── data/recorded/              Offline deterministic replays
+│   └── tests/                      Backend verification suite
+├── automation/n8n/                 Importable operator-digest workflow
+├── deploy/azure/                   Production Compose, Caddy and VM scripts
+├── docs/                           Contracts, deployment and readiness guides
+├── scripts/demo_check.py           End-to-end pre-evaluation check
+├── docker-compose.yml              Local API + PostgreSQL
+└── Makefile                        Common development commands
 ```
 
+## Honest scope and limitations
+
+- All network and household outcomes are simulated; no live DISCOM system is contacted.
+- The Chronos result is a held-out offline evaluation and is not the live tick forecaster.
+- Transformer-scale Chronos reporting currently contains five aggregate series; the README exposes that scope rather than presenting it as a fleet-wide field trial.
+- The flexibility estimator identifies weather association, not individual appliances.
+- PostgreSQL stores demo-scale audit history, not production-scale telemetry.
+- Authentication, multi-tenancy, field-device protocols, and regulatory integration are outside the hackathon scope.
+- When flexibility is insufficient, Vidyut may still require targeted rotational disconnection. The objective is minimum, fair, explainable harm—not impossible zero-outage guarantees.
+
+## Documentation
+
+- [Backend guide](backend/README.md)
+- [Forecasting and Chronos methodology](backend/ml/README.md)
+- [Frontend guide](frontend/README.md)
+- [Frontend/API contract](docs/frontend-contract.md)
+- [Plain-language endpoint guide](frontend/docs/endpoint-guide.md)
+- [Persistence and fairness rationale](docs/persistence-scope.md)
+- [n8n operator automation](automation/n8n/README.md)
+- [Azure runtime](deploy/azure/README.md)
+- [Vercel + Azure deployment runbook](docs/deployment-vercel-azure.md)
+- [Demo readiness checklist](docs/demo-readiness.md)
+
 ---
 
-## 📜 Simulation Scenarios
-
-| Scenario | Description | Peak Multiplier |
-|:--|:--|:--|
-| `heatwave` | Extreme heat drives simultaneous cooling demand across the network | 1.42× |
-| `ev_surge` | High EV charging penetration creates evening demand spikes | Configurable |
-| `normal` | Baseline day with typical residential load patterns | 1.0× |
-
-Each scenario is defined in a YAML config file (`backend/data/scenarios/`) and supports runtime parameter overrides via the API (AMI penetration, EV penetration, critical share, etc.).
-
----
-
-> **Built for the Hackathon** — Vidyut-AI demonstrates that AI-driven distribution intelligence can prevent blackouts, protect critical loads, and maintain fairness — all with full auditability.
+Vidyut demonstrates a practical principle: distribution intelligence should intervene before a transformer trips, protect critical demand first, distribute unavoidable burden fairly, and leave behind evidence strong enough to audit.
